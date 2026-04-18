@@ -1,0 +1,6 @@
+PLACEHOLDER — replace with real world model checkpoint before use.
+
+Expected: a PyTorch state dict for a world model that predicts next latents
+from current latent + action. (128,) float32 in, (128,) float32 out.
+
+This placeholder uses identity dynamics + Gaussian noise.
