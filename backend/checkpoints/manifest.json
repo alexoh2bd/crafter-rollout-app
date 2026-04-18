@@ -6,6 +6,21 @@
       "ckpt_type": "random",
       "path": "policy_random.pt.placeholder",
       "description": "Placeholder — uniform random action selection across all 17 actions"
+    },
+    {
+      "checkpoint_id": "ppo_teacher",
+      "display_name": "PPO Teacher",
+      "ckpt_type": "ppo",
+      "path": "ppo_teacher.pt",
+      "description": "PPO policy weights (ppo_teacher.pt). Upload to volume or place in checkpoints/ locally."
+    }
+  ],
+  "world_models": [
+    {
+      "model_id": "lewm_base",
+      "display_name": "Le-World Model (Base)",
+      "path": "lewm_base.pt",
+      "description": "Le-World Model with a ViT-Tiny encoder pretrained on PPO teacher rollouts (used by imagination / world_model.py when implemented)."
     }
   ]
 }

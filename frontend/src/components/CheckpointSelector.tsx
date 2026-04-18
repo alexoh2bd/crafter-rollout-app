@@ -21,6 +21,20 @@ export default function CheckpointSelector({ value, onChange }: Props) {
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (checkpoints.length === 0) {
+    return (
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          Checkpoint
+        </label>
+        <p className="text-sm text-amber-400/90">
+          No checkpoints available. Add weight files under CHECKPOINTS_DIR (e.g.
+          ppo_teacher.pt) or upload via the API.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">

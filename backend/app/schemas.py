@@ -63,6 +63,20 @@ class FrameMessage(BaseModel):
     timestamp: datetime
 
 
+class ImaginationRollout(BaseModel):
+    """One imagined trajectory from the world model predictor."""
+
+    latents: list[list[float]]   # (horizon+1, latent_dim)
+    pca_2d: list[list[float]]    # (horizon+1, 2) — projected for visualization
+
+
+class ImaginationMessage(BaseModel):
+    """Payload sent by the backend after each imagination step."""
+
+    rollouts: list[ImaginationRollout]  # K parallel imagined trajectories
+    real_pca_2d: list[list[float]]      # (N, 2) real latent history projected
+
+
 class StartSessionRequest(BaseModel):
     mode: Literal["human", "agent", "imagination"] = "human"
     seed: int | None = None

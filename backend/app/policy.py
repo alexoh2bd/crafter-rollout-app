@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import torch
+import torch.nn as nn
 
-CHECKPOINTS_DIR = Path(__file__).parent.parent / "checkpoints"
 N_ACTIONS = 17
+
+
+def checkpoints_dir() -> Path:
+    """Directory for manifest + .pt files. Override with CHECKPOINTS_DIR (e.g. Railway volume)."""
+    override = os.getenv("CHECKPOINTS_DIR")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / "checkpoints"
 
 
 @dataclass
@@ -29,19 +40,158 @@ class ActionResult:
     logits: np.ndarray  # (17,) float32
 
 
+class _CrafterActorCritic(nn.Module):
+    """CNN actor-critic for 64×64×3 Crafter obs → 17 logits + value."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2),
+            nn.ReLU(),
+        )
+        flat = 128 * 6 * 6
+        self.fc = nn.Linear(flat, 128)
+        self.pi = nn.Linear(128, N_ACTIONS)
+        self.vf = nn.Linear(128, 1)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        z = self.features(x).flatten(1)
+        h = torch.relu(self.fc(z))
+        return self.pi(h), self.vf(h)
+
+
+def _obs_to_tensor(obs: np.ndarray) -> torch.Tensor:
+    x = torch.from_numpy(obs.astype(np.float32))
+    if x.ndim == 3 and x.shape[2] == 3:
+        x = x.permute(2, 0, 1)
+    if x.dtype == torch.uint8:
+        x = x.float().div(255.0)
+    elif x.max() > 1.5:
+        x = x.div(255.0)
+    return x.unsqueeze(0)
+
+
+def _strip_prefix(state: dict[str, torch.Tensor], prefixes: list[str]) -> dict[str, torch.Tensor]:
+    out: dict[str, torch.Tensor] = {}
+    for k, v in state.items():
+        nk = k
+        for p in prefixes:
+            if nk.startswith(p):
+                nk = nk[len(p) :]
+        out[nk] = v
+    return out
+
+
+def _logits_value_from_output(
+    out: torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    if isinstance(out, torch.Tensor):
+        if out.shape[-1] == N_ACTIONS:
+            return out, None
+        if out.numel() == N_ACTIONS:
+            return out.flatten(), None
+        raise ValueError(f"Unexpected tensor shape from policy forward: {out.shape}")
+    if isinstance(out, (tuple, list)) and len(out) >= 1:
+        logits = out[0]
+        value = out[1] if len(out) > 1 else None
+        return logits, value
+    raise TypeError(f"Unexpected forward output type: {type(out)}")
+
+
+class _TorchPolicyBackend:
+    """Runs forward on obs; supports JIT, nn.Module, or state_dict into _CrafterActorCritic."""
+
+    def __init__(self, checkpoint_path: str) -> None:
+        path = Path(checkpoint_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Checkpoint file not found: {path}")
+
+        # 1) TorchScript
+        try:
+            m = torch.jit.load(str(path), map_location="cpu")
+            m.eval()
+            self._model = m
+            return
+        except Exception:
+            pass
+
+        obj = torch.load(str(path), map_location="cpu", weights_only=False)
+
+        # 2) nn.Module
+        if isinstance(obj, nn.Module):
+            obj.eval()
+            self._model = obj
+            return
+
+        # 3) state dict (possibly nested dict)
+        state: dict[str, torch.Tensor]
+        if isinstance(obj, dict):
+            if "state_dict" in obj and isinstance(obj["state_dict"], dict):
+                state = obj["state_dict"]  # type: ignore[assignment]
+            elif "model_state_dict" in obj and isinstance(obj["model_state_dict"], dict):
+                state = obj["model_state_dict"]  # type: ignore[assignment]
+            elif all(isinstance(v, torch.Tensor) for v in obj.values()):
+                state = obj  # type: ignore[assignment]
+            else:
+                # try first tensor-valued dict-like
+                state = {k: v for k, v in obj.items() if isinstance(v, torch.Tensor)}
+                if not state:
+                    raise ValueError(
+                        f"Could not interpret checkpoint dict keys: {list(obj.keys())[:20]}"
+                    )
+        else:
+            raise ValueError(f"Unsupported checkpoint type: {type(obj)}")
+
+        for prefix in ("module.", "actor.", "policy.", "net."):
+            state = _strip_prefix(state, [prefix])
+
+        net = _CrafterActorCritic()
+        net.load_state_dict(state, strict=False)
+        net.eval()
+        self._model = net
+
+    def forward(self, obs: np.ndarray) -> tuple[torch.Tensor, torch.Tensor | None]:
+        x = _obs_to_tensor(obs)
+        with torch.no_grad():
+            out = self._model(x)
+        return _logits_value_from_output(out)
+
+
 class Policy:
     """Runs inference for a single policy checkpoint."""
 
     def __init__(self, checkpoint_path: str, ckpt_type: str) -> None:
         self._ckpt_type = ckpt_type
         self._rng = np.random.default_rng()
+        self._torch: _TorchPolicyBackend | None = None
+        if ckpt_type == "ppo":
+            self._torch = _TorchPolicyBackend(checkpoint_path)
 
     def act(self, obs: np.ndarray) -> ActionResult:
-        # Uniform random policy — placeholder until real weights land
-        logits = np.zeros(N_ACTIONS, dtype=np.float32)
-        probs = np.full(N_ACTIONS, 1.0 / N_ACTIONS, dtype=np.float32)
-        action = int(self._rng.integers(0, N_ACTIONS))
-        return ActionResult(action=action, action_probs=probs, value=None, logits=logits)
+        if self._ckpt_type == "random" or self._torch is None:
+            logits = np.zeros(N_ACTIONS, dtype=np.float32)
+            probs = np.full(N_ACTIONS, 1.0 / N_ACTIONS, dtype=np.float32)
+            action = int(self._rng.integers(0, N_ACTIONS))
+            return ActionResult(action=action, action_probs=probs, value=None, logits=logits)
+
+        logits_t, value_t = self._torch.forward(obs)
+        logits_np = logits_t.squeeze(0).detach().cpu().numpy().astype(np.float32)
+        probs_t = torch.softmax(logits_t.squeeze(0), dim=-1)
+        probs = probs_t.detach().cpu().numpy().astype(np.float32)
+        action = int(torch.argmax(probs_t).item())
+        value: float | None = None
+        if value_t is not None:
+            value = float(value_t.squeeze().item())
+        return ActionResult(
+            action=action,
+            action_probs=probs,
+            value=value,
+            logits=logits_np,
+        )
 
 
 class PolicyRegistry:
@@ -50,9 +200,36 @@ class PolicyRegistry:
     _cache: dict[str, Policy] = {}
 
     @classmethod
+    def _manifest_path(cls) -> Path:
+        return checkpoints_dir() / "manifest.json"
+
+    @classmethod
     def _manifest(cls) -> list[dict]:
-        with (CHECKPOINTS_DIR / "manifest.json").open() as f:
-            return json.load(f)["checkpoints"]
+        mp = cls._manifest_path()
+        if not mp.is_file():
+            return []
+        with mp.open() as f:
+            return json.load(f).get("checkpoints", [])
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        cls._cache.clear()
+
+    @classmethod
+    def upsert_manifest_entry(cls, entry: dict) -> None:
+        mp = cls._manifest_path()
+        checkpoints_dir().mkdir(parents=True, exist_ok=True)
+        data: dict = {"checkpoints": []}
+        if mp.is_file():
+            data = json.loads(mp.read_text())
+        data.setdefault("checkpoints", [])
+        ids = [c["checkpoint_id"] for c in data["checkpoints"]]
+        if entry["checkpoint_id"] in ids:
+            data["checkpoints"][ids.index(entry["checkpoint_id"])] = entry
+        else:
+            data["checkpoints"].append(entry)
+        mp.write_text(json.dumps(data, indent=2) + "\n")
+        cls.clear_cache()
 
     @classmethod
     def get(cls, checkpoint_id: str) -> Policy:
@@ -60,10 +237,19 @@ class PolicyRegistry:
             return cls._cache[checkpoint_id]
         for entry in cls._manifest():
             if entry["checkpoint_id"] == checkpoint_id:
-                policy = Policy(
-                    checkpoint_path=str(CHECKPOINTS_DIR / entry["path"]),
-                    ckpt_type=entry["ckpt_type"],
-                )
+                rel = entry["path"]
+                full = checkpoints_dir() / rel
+                if not full.is_file():
+                    raise KeyError(
+                        f"Checkpoint file missing on disk: {full} (id={checkpoint_id!r})"
+                    )
+                try:
+                    policy = Policy(
+                        checkpoint_path=str(full),
+                        ckpt_type=entry["ckpt_type"],
+                    )
+                except (FileNotFoundError, ValueError) as e:
+                    raise KeyError(str(e)) from e
                 cls._cache[checkpoint_id] = policy
                 return policy
         raise KeyError(f"Checkpoint not found: {checkpoint_id!r}")
