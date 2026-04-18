@@ -1,9 +1,5 @@
-"""Crafter achievement tracking utilities.
+"""Crafter achievement tracking utilities."""
 
-Implemented in PR 2 (backend core).
-"""
-
-# Crafter has 22 achievements; names are taken from crafter.constants.
 ACHIEVEMENT_NAMES: list[str] = [
     "collect_coal",
     "collect_diamond",
@@ -34,8 +30,5 @@ def diff_achievements(
     prev: dict[str, int],
     curr: dict[str, int],
 ) -> list[str]:
-    """Return achievement keys newly unlocked between two achievement dicts.
-
-    Implemented in PR 2.
-    """
-    raise NotImplementedError
+    """Return achievement keys newly reached (0 → ≥1) between two snapshots."""
+    return [k for k, v in curr.items() if v > 0 and prev.get(k, 0) == 0]

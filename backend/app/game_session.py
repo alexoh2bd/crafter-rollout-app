@@ -1,76 +1,93 @@
-"""GameSession: manages a single Crafter episode.
-
-Interface defined here; human mode implemented in PR 2, encoder integration
-in PR 3, agent loop in PR 5, imagination in PR 6, WebSocket in PR 7.
-"""
+"""GameSession: manages a single Crafter episode."""
 
 from __future__ import annotations
 
+import base64
+import random
+import uuid
+from datetime import datetime, timezone
+from io import BytesIO
 from typing import TYPE_CHECKING, Literal
 
+import numpy as np
+from PIL import Image
+
+from .achievements import ACHIEVEMENT_NAMES, diff_achievements
+from .schemas import ACTION_NAMES, FrameMessage, InventoryState
+
 if TYPE_CHECKING:
-    import crafter
-
-
-class FrameMessage:
-    """Payload sent to client after each human step.
-
-    Schema defined in PR 2 (schemas.py).
-    """
+    from .encoder import Encoder
 
 
 class ImaginationMessage:
-    """Payload describing K imagination rollouts.
+    """Payload describing K imagination rollouts. Schema defined in PR 6."""
 
-    Schema defined in PR 6 (schemas.py).
-    """
+
+def _obs_to_base64(obs: np.ndarray) -> str:
+    buf = BytesIO()
+    Image.fromarray(obs).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 class GameSession:
     """Holds all state for one Crafter session."""
 
-    mode: Literal["human", "agent", "imagination"]
-    session_id: str
-    seed: int
-    env: "crafter.Env"
-
     def __init__(
         self,
-        mode: Literal["human", "agent", "imagination"],
+        mode: Literal["human", "agent", "imagination"] = "human",
         seed: int | None = None,
+        encoder: Encoder | None = None,
     ) -> None:
-        """Create and reset a new Crafter environment.
+        import crafter
 
-        Implemented in PR 2.
-        """
-        raise NotImplementedError
+        self.session_id = str(uuid.uuid4())
+        self.mode = mode
+        self.seed = seed if seed is not None else random.randint(0, 2**31 - 1)
+        self.env = crafter.Env(seed=self.seed)
+        self._obs: np.ndarray = self.env.reset()
+        self._prev_achievements: dict[str, int] = {k: 0 for k in ACHIEVEMENT_NAMES}
+        self._step_count = 0
+        self._encoder = encoder
 
     def step_human(self, action: int) -> FrameMessage:
-        """Apply *action* and return the resulting frame data.
+        obs, reward, done, info = self.env.step(action)
+        self._step_count += 1
 
-        Implemented in PR 2.
-        """
-        raise NotImplementedError
+        achievements_curr: dict[str, int] = info.get("achievements", {})
+        new_achievements = diff_achievements(self._prev_achievements, achievements_curr)
+        self._prev_achievements = {**self._prev_achievements, **achievements_curr}
+        self._obs = obs
+
+        latent: list[float] | None = None
+        if self._encoder is not None:
+            latent = self._encoder.encode(obs).tolist()
+
+        return FrameMessage(
+            step=self._step_count,
+            obs=_obs_to_base64(obs),
+            latent=latent,
+            action=action,
+            action_name=ACTION_NAMES[action],
+            reward=float(reward),
+            done=bool(done),
+            inventory=InventoryState(**info.get("inventory", {})),
+            achievements_unlocked_this_step=new_achievements,
+            source="human",
+            checkpoint_id=None,
+            action_probs=None,
+            value_estimate=None,
+            seed=self.seed,
+            timestamp=datetime.now(timezone.utc),
+        )
 
     async def run_agent_loop(self, checkpoint_id: str, fps: int) -> None:
-        """Drive the env with the named policy at *fps* frames-per-second.
-
-        Streams FrameMessages over the session's WebSocket connection.
-
-        Implemented in PR 5 + PR 7.
-        """
+        """Drive the env with the named policy at fps frames-per-second. PR 5+7."""
         raise NotImplementedError
 
     def imagine_rollouts(self, K: int, H: int) -> ImaginationMessage:
-        """Generate K imagination rollouts of length H from current latent.
-
-        Implemented in PR 6.
-        """
+        """Generate K imagination rollouts of length H. PR 6."""
         raise NotImplementedError
 
     def close(self) -> None:
-        """Release environment resources.
-
-        Implemented in PR 2.
-        """
-        raise NotImplementedError
+        if hasattr(self.env, "close"):
+            self.env.close()
