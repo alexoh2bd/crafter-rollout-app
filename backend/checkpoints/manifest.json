@@ -1,0 +1,11 @@
+{
+  "checkpoints": [
+    {
+      "checkpoint_id": "random",
+      "display_name": "Random Policy",
+      "ckpt_type": "random",
+      "path": "policy_random.pt.placeholder",
+      "description": "Placeholder — uniform random action selection across all 17 actions"
+    }
+  ]
+}

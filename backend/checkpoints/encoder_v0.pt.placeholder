@@ -1,0 +1,7 @@
+PLACEHOLDER — replace with real encoder checkpoint before use.
+
+Expected: a PyTorch state dict for a CNN encoder producing (128,) float32 latents
+from (64, 64, 3) uint8 observations.
+
+Generate a random-init placeholder with:
+  python backend/scripts/export_encoder.py --output backend/checkpoints/encoder_v0.pt

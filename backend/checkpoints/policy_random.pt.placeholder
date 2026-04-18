@@ -1,0 +1,7 @@
+PLACEHOLDER — replace with real policy checkpoint before use.
+
+Expected: a PyTorch state dict for a policy network over 17 Crafter actions.
+This placeholder represents a random policy (uniform action distribution).
+
+Generate with:
+  python backend/scripts/add_checkpoint.py --type random --output backend/checkpoints/policy_random.pt
