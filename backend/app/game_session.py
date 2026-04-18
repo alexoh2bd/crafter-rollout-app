@@ -49,7 +49,18 @@ class GameSession:
         self._step_count = 0
         self._encoder = encoder
 
-    def step_human(self, action: int) -> FrameMessage:
+    @property
+    def obs(self) -> np.ndarray:
+        return self._obs
+
+    def step_human(
+        self,
+        action: int,
+        source: Literal["human", "agent"] = "human",
+        checkpoint_id: str | None = None,
+        action_probs: list[float] | None = None,
+        value_estimate: float | None = None,
+    ) -> FrameMessage:
         obs, reward, done, info = self.env.step(action)
         self._step_count += 1
 
@@ -72,10 +83,10 @@ class GameSession:
             done=bool(done),
             inventory=InventoryState(**info.get("inventory", {})),
             achievements_unlocked_this_step=new_achievements,
-            source="human",
-            checkpoint_id=None,
-            action_probs=None,
-            value_estimate=None,
+            source=source,
+            checkpoint_id=checkpoint_id,
+            action_probs=action_probs,
+            value_estimate=value_estimate,
             seed=self.seed,
             timestamp=datetime.now(timezone.utc),
         )
