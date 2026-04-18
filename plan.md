@@ -174,6 +174,7 @@ Agent-mode line differs in `source: "agent"`, `checkpoint_id: "ppo-10m"`,
 
 ```
 crafter-rollout-collector/
+├── vercel.json
 ├── backend/
 │   ├── app/
 │   │   ├── main.py
@@ -311,10 +312,12 @@ A11y pass, loading states, error boundaries.
 5. Healthcheck path: `/api/health`, expected status 200.
 
 **Frontend on Vercel:**
-1. Push main to GitHub, connect Vercel to repo.
-2. Set root directory to `frontend/`, framework: Vite.
-3. Environment variable: `VITE_API_URL=https://<railway-url>`, 
-   `VITE_WS_URL=wss://<railway-url>`.
+1. Push main to GitHub, connect Vercel to this repo.
+2. Either leave root directory at `.` and use root `vercel.json` (builds
+   `frontend/`), or set root directory to `frontend/` with framework Vite (see
+   [DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+3. Environment variables: `VITE_API_URL=https://<railway-url>`,
+   `VITE_WS_URL=wss://<railway-url>` (Production and Preview).
 4. Deploy. Main branch → production, PR branches → previews.
 
 **Supabase setup:**

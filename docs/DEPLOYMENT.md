@@ -14,33 +14,34 @@
 
 ## Frontend on Vercel
 
-### Option A — Linked to the `crafter-wm` monorepo (recommended)
+### Option A — This repository root (recommended)
 
-The repository root contains a `vercel.json` that configures install, build, and
-output paths, so no dashboard overrides are needed.
+The repository root (`crafter-rollout-app`) contains a `vercel.json` that
+configures install, build, output directory, and SPA rewrites for the Vite app
+under `frontend/`, so no dashboard overrides are needed.
 
-1. Push `main` to GitHub, connect Vercel to the **`crafter-wm`** repo.
-2. Leave **Root Directory** as `.` (repo root). Vercel reads `vercel.json`
-   automatically.
+1. Push `main` to GitHub, connect Vercel to **this** repository.
+2. Leave **Root Directory** as `.` (repository root). Vercel reads
+   `vercel.json` at the root automatically.
 3. Set environment variables in **Production** *and* **Preview** scopes
    (Vite inlines them at build time, so they must exist before the build runs):
    - `VITE_API_URL=https://<your-railway-url>`
    - `VITE_WS_URL=wss://<your-railway-url>`
 4. Deploy. `main` → production; PR branches → preview deployments.
 
-### Option B — Root Directory override
+### Option B — Root Directory `frontend`
 
-If you prefer to skip the root `vercel.json`:
+If you prefer to point Vercel only at the frontend package:
 
 1. In **Vercel → Project → Settings → General → Root Directory**, set:
-   `crafter-rollout-app/frontend`
-2. Framework preset: **Vite**. Output Directory: `dist`.
+   `frontend`
+2. Framework preset: **Vite**. Output Directory: `dist` (default for Vite).
 3. Set the same `VITE_API_URL` and `VITE_WS_URL` environment variables as above.
 4. Deploy.
 
-> `crafter-rollout-app/frontend/vercel.json` contains the SPA rewrite rule
-> (`/* → /index.html`) that makes React Router deep links work; it is used in
-> both options.
+`frontend/vercel.json` holds the SPA rewrite rule (`/* → /index.html`) for
+React Router deep links when using Option B. Option A applies the same rewrites
+from the root `vercel.json`.
 
 ## Supabase setup
 

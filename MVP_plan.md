@@ -34,6 +34,7 @@ inference in the serving path.
 ## Revised Architecture
 ```
 crafter-rollout-collector/
+├── vercel.json
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI app, all routes in one file
