@@ -3,6 +3,7 @@ import Home from "./routes/Home";
 import Play from "./routes/Play";
 import Demo from "./routes/Demo";
 import Imagination from "./routes/Imagination";
+import WorldModelDemo from "./routes/WorldModelDemo";
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/play" element={<Play />} />
         <Route path="/demo" element={<Demo />} />
         <Route path="/imagination" element={<Imagination />} />
+        <Route path="/wm-demo" element={<WorldModelDemo />} />
       </Routes>
     </BrowserRouter>
   );

@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import os
+import secrets
 import re
 import shutil
 import tarfile
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+import numpy as np
+import torch
 
 from fastapi import (
     FastAPI,
@@ -26,6 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from .game_session import GameSession
+from .hwm_model import HWMAgent, WMBaseAgent
 from .policy import PolicyRegistry, checkpoints_dir
 from .schemas import StartSessionRequest, StartSessionResponse
 from .storage import MetadataStore, RolloutWriter
@@ -38,6 +44,8 @@ _sessions: dict[str, GameSession] = {}
 _writers: dict[str, RolloutWriter] = {}
 _store: MetadataStore
 _world_model: WorldModel | None = None
+_wm_base_agent: WMBaseAgent | None = None
+_hwm_agent_template: HWMAgent | None = None  # used as factory; per-session copies are made
 
 
 def _ensure_manifest_seed() -> None:
@@ -54,17 +62,42 @@ def _ensure_manifest_seed() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _world_model
+    global _store, _world_model, _wm_base_agent, _hwm_agent_template
     _ensure_manifest_seed()
     _store = MetadataStore()
 
     wm_path = checkpoints_dir() / "lewm_base.pt"
+    goal_lib_path = checkpoints_dir() / "goal_library.npz"
+    hwm_path = checkpoints_dir() / "hwm_high.pt"
+
     if wm_path.is_file():
         try:
             _world_model = WorldModel(str(wm_path))
             print(f"World model loaded from {wm_path} (latent_dim={_world_model.latent_dim})")
+
+            goal_lib_str = str(goal_lib_path) if goal_lib_path.is_file() else None
+            _wm_base_agent = WMBaseAgent(_world_model, goal_library_path=goal_lib_str)
+            print(
+                f"WMBaseAgent ready"
+                + (f" with {len(_wm_base_agent.list_achievements())} goals" if goal_lib_str else " (no goal library)")
+            )
         except Exception as exc:
             print(f"Warning: failed to load world model from {wm_path}: {exc}")
+
+    if wm_path.is_file() and hwm_path.is_file() and _world_model is not None:
+        try:
+            goal_lib_str = str(goal_lib_path) if goal_lib_path.is_file() else None
+            _hwm_agent_template = HWMAgent(
+                _world_model,
+                hwm_ckpt_path=str(hwm_path),
+                goal_library_path=goal_lib_str,
+            )
+            print(
+                f"HWMAgent loaded from {hwm_path}"
+                + (f" with {len(_hwm_agent_template.list_achievements())} goals" if goal_lib_str else " (no goal library)")
+            )
+        except Exception as exc:
+            print(f"Warning: failed to load HWM from {hwm_path}: {exc}")
 
     yield
 
@@ -89,6 +122,19 @@ app.add_middleware(
 @app.get("/api/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/wm/goals")
+async def list_wm_goals() -> dict:
+    """Return available achievements from the goal library, plus model availability flags."""
+    goals: list[str] = []
+    if _wm_base_agent is not None:
+        goals = _wm_base_agent.list_achievements()
+    return {
+        "goals": goals,
+        "wm_base_available": _wm_base_agent is not None,
+        "hwm_available": _hwm_agent_template is not None,
+    }
 
 
 @app.get("/api/checkpoints")
@@ -128,7 +174,9 @@ async def upload_checkpoint(
             status_code=503,
             detail="Checkpoint upload disabled. Set CHECKPOINT_UPLOAD_SECRET in the environment.",
         )
-    if x_upload_secret != secret:
+    received = (x_upload_secret or "").strip()
+    expected = secret.strip()
+    if len(received) != len(expected) or not secrets.compare_digest(received, expected):
         raise HTTPException(status_code=403, detail="Invalid upload secret")
 
     cid = _safe_checkpoint_id(checkpoint_id)
@@ -162,12 +210,16 @@ async def upload_checkpoint(
 @app.post("/api/sessions", response_model=StartSessionResponse)
 async def create_session(req: StartSessionRequest) -> StartSessionResponse:
     human_count = sum(1 for s in _sessions.values() if s.mode == "human")
-    agent_count = sum(1 for s in _sessions.values() if s.mode == "agent")
+    agent_count = sum(1 for s in _sessions.values() if s.mode in ("agent", "wm_base", "hwm"))
 
     if req.mode == "human" and human_count >= MAX_HUMAN_SESSIONS:
         raise HTTPException(429, "Max human sessions reached")
-    if req.mode == "agent" and agent_count >= MAX_AGENT_SESSIONS:
+    if req.mode in ("agent", "wm_base", "hwm") and agent_count >= MAX_AGENT_SESSIONS:
         raise HTTPException(429, "Max agent sessions reached")
+    if req.mode == "wm_base" and _wm_base_agent is None:
+        raise HTTPException(503, "Base world model not loaded. Place lewm_base.pt in checkpoints/.")
+    if req.mode == "hwm" and _hwm_agent_template is None:
+        raise HTTPException(503, "HWM not loaded. Place lewm_base.pt and hwm_high.pt in checkpoints/.")
 
     session = GameSession(mode=req.mode, seed=req.seed, world_model=_world_model)
     writer = RolloutWriter(session.session_id)
@@ -243,6 +295,12 @@ async def websocket_endpoint(ws: WebSocket, session_id: str) -> None:
             K = int(init.get("K", 4))
             H = int(init.get("H", 16))
             await _imagination_loop(ws, session, writer, K, H)
+        elif session.mode == "wm_base":
+            init = json.loads(await ws.receive_text())
+            await _wm_base_loop(ws, session, writer, init)
+        elif session.mode == "hwm":
+            init = json.loads(await ws.receive_text())
+            await _hwm_loop(ws, session, writer, init)
     except WebSocketDisconnect:
         pass
     finally:
@@ -301,18 +359,173 @@ async def _agent_loop(
     checkpoint_id: str,
     fps: int,
 ) -> None:
-    policy = PolicyRegistry.get(checkpoint_id)
-    interval = 1.0 / max(1, fps)
-    while True:
-        result = policy.act(session.obs)
-        frame = session.step_human(
-            result.action,
-            source="agent",
-            checkpoint_id=checkpoint_id,
-            action_probs=result.action_probs.tolist(),
-            value_estimate=result.value,
+    try:
+        policy = PolicyRegistry.get(checkpoint_id)
+    except KeyError as e:
+        await ws.send_text(json.dumps({"error": str(e)}))
+        return
+    except Exception as e:
+        await ws.send_text(
+            json.dumps({"error": f"Failed to load checkpoint {checkpoint_id!r}: {e}"})
         )
-        row = frame.model_dump(mode="json")
-        writer.write(row)
-        await ws.send_text(frame.model_dump_json())
-        await asyncio.sleep(interval)
+        return
+
+    interval = 1.0 / max(1, fps)
+    try:
+        while True:
+            result = policy.act(session.obs)
+            frame = session.step_human(
+                result.action,
+                source="agent",
+                checkpoint_id=checkpoint_id,
+                action_probs=result.action_probs.tolist(),
+                value_estimate=result.value,
+            )
+            row = frame.model_dump(mode="json")
+            writer.write(row)
+            await ws.send_text(frame.model_dump_json())
+            await asyncio.sleep(interval)
+    except Exception as e:
+        try:
+            await ws.send_text(json.dumps({"error": f"Agent step failed: {e}"}))
+        except Exception:
+            pass
+
+
+_wm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+async def _wm_base_loop(
+    ws: WebSocket,
+    session: GameSession,
+    writer: RolloutWriter,
+    init: dict,
+) -> None:
+    """Autonomous agent loop using flat CEM planning with the base LeWM.
+
+    Init message fields:
+        achievement  (str)  goal achievement name (required if goal library is loaded)
+        H_lo         (int)  low-level CEM horizon        [default 10]
+        n_samples    (int)  CEM population size          [default 100]
+        n_iters      (int)  CEM refinement iterations    [default 3]
+    """
+    if _wm_base_agent is None:
+        await ws.send_text(json.dumps({"error": "Base world model not available."}))
+        return
+
+    achievement = init.get("achievement", "")
+    H_lo = int(init.get("H_lo", 10))
+    n_samples = int(init.get("n_samples", 100))
+    n_iters = int(init.get("n_iters", 3))
+    n_elite = max(1, n_samples // 10)
+
+    try:
+        z_goal = _wm_base_agent.encode_goal(achievement) if achievement else None
+    except Exception as exc:
+        await ws.send_text(json.dumps({"error": f"Could not encode goal '{achievement}': {exc}"}))
+        return
+
+    if z_goal is None:
+        # No goal library: sample a fixed random goal in latent space for exploration
+        z_goal = torch.randn(_wm_base_agent._wm.latent_dim).numpy().astype("float32")
+
+    loop = asyncio.get_event_loop()
+
+    try:
+        while True:
+            obs = session.obs
+            action, planning_ms, z_goal_dist = await loop.run_in_executor(
+                _wm_executor,
+                lambda: _wm_base_agent.plan_step(
+                    obs, z_goal, H_lo=H_lo, n_samples=n_samples,
+                    n_elite=n_elite, n_iters=n_iters,
+                ),
+            )
+            frame = session.step_human(action, source="agent")
+            # Attach planning metadata directly via model_dump + override
+            row = frame.model_dump(mode="json")
+            row["planning_ms"] = planning_ms
+            row["z_goal_dist"] = z_goal_dist
+            row["model_type"] = "wm_base"
+            writer.write(row)
+            await ws.send_text(json.dumps(row))
+            await asyncio.sleep(0)  # yield to event loop
+    except Exception as e:
+        try:
+            await ws.send_text(json.dumps({"error": f"WM step failed: {e}"}))
+        except Exception:
+            pass
+
+
+async def _hwm_loop(
+    ws: WebSocket,
+    session: GameSession,
+    writer: RolloutWriter,
+    init: dict,
+) -> None:
+    """Autonomous agent loop using two-level CEM (ActionEncoder + HighLevelPredictor).
+
+    Init message fields:
+        achievement  (str)  goal achievement name (required)
+        H_lo         (int)  low-level horizon             [default 10]
+        H_hi         (int)  high-level horizon            [default 3]
+        n_samples    (int)  CEM population size           [default 100]
+        n_iters      (int)  CEM refinement iterations     [default 3]
+    """
+    if _hwm_agent_template is None:
+        await ws.send_text(json.dumps({"error": "HWM not available."}))
+        return
+
+    achievement = init.get("achievement", "")
+    H_lo = int(init.get("H_lo", 10))
+    H_hi = int(init.get("H_hi", 3))
+    n_samples = int(init.get("n_samples", 100))
+    n_iters = int(init.get("n_iters", 3))
+    n_elite = max(1, n_samples // 10)
+
+    # Create a fresh per-session HWM agent (stateful subgoal tracking)
+    hwm_path = checkpoints_dir() / "hwm_high.pt"
+    goal_lib_path = checkpoints_dir() / "goal_library.npz"
+    hwm_agent = HWMAgent(
+        _hwm_agent_template._wm,
+        hwm_ckpt_path=str(hwm_path),
+        goal_library_path=str(goal_lib_path) if goal_lib_path.is_file() else None,
+    )
+
+    try:
+        z_goal = hwm_agent.encode_goal(achievement) if achievement else None
+    except Exception as exc:
+        await ws.send_text(json.dumps({"error": f"Could not encode goal '{achievement}': {exc}"}))
+        return
+
+    if z_goal is None:
+        z_goal = np.zeros(hwm_agent._wm.latent_dim, dtype="float32")
+
+    loop = asyncio.get_event_loop()
+
+    try:
+        while True:
+            obs = session.obs
+            action, planning_ms, z_goal_dist = await loop.run_in_executor(
+                _wm_executor,
+                lambda: hwm_agent.plan_step(
+                    obs, z_goal,
+                    H_lo=H_lo, H_hi=H_hi,
+                    n_samples_lo=n_samples, n_samples_hi=n_samples,
+                    n_elite_lo=n_elite, n_elite_hi=n_elite,
+                    n_iters=n_iters,
+                ),
+            )
+            frame = session.step_human(action, source="agent")
+            row = frame.model_dump(mode="json")
+            row["planning_ms"] = planning_ms
+            row["z_goal_dist"] = z_goal_dist
+            row["model_type"] = "hwm"
+            writer.write(row)
+            await ws.send_text(json.dumps(row))
+            await asyncio.sleep(0)
+    except Exception as e:
+        try:
+            await ws.send_text(json.dumps({"error": f"HWM step failed: {e}"}))
+        except Exception:
+            pass

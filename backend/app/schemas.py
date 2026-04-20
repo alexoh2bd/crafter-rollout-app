@@ -61,6 +61,10 @@ class FrameMessage(BaseModel):
     value_estimate: float | None
     seed: int
     timestamp: datetime
+    # World-model planning metadata (wm_base / hwm modes only)
+    planning_ms: float | None = None
+    z_goal_dist: float | None = None
+    model_type: str | None = None
 
 
 class ImaginationRollout(BaseModel):
@@ -78,7 +82,7 @@ class ImaginationMessage(BaseModel):
 
 
 class StartSessionRequest(BaseModel):
-    mode: Literal["human", "agent", "imagination"] = "human"
+    mode: Literal["human", "agent", "imagination", "wm_base", "hwm"] = "human"
     seed: int | None = None
 
 

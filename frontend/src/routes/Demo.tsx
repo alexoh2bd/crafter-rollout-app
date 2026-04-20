@@ -19,7 +19,8 @@ export default function Demo() {
   const [checkpointId, setCheckpointId] = useState<string>("");
   const [fps, setFps] = useState<number>(4);
 
-  const { phase, frame, start, stop, download } = useGameSession("agent");
+  const { phase, frame, error, start, stop, download } =
+    useGameSession("agent");
 
   const handleStart = () => {
     start({ checkpointId: checkpointId || "random", fps });
@@ -60,6 +61,11 @@ export default function Demo() {
           {phase === "idle" && (
             <p className="text-gray-500 text-sm">
               Select a checkpoint and press Start.
+            </p>
+          )}
+          {phase === "error" && error && (
+            <p className="text-red-400 text-sm font-medium max-w-md text-center">
+              {error}
             </p>
           )}
           {phase === "done" && (

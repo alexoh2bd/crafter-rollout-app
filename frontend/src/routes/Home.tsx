@@ -27,6 +27,12 @@ export default function Home() {
         >
           Watch AI
         </button>
+        <button
+          onClick={() => navigate("/wm-demo")}
+          className="px-10 py-6 rounded-2xl bg-violet-700 hover:bg-violet-600 transition-colors text-white text-xl font-semibold shadow-lg"
+        >
+          World Models
+        </button>
       </div>
     </div>
   );

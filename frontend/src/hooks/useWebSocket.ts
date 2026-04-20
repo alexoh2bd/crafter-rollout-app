@@ -6,6 +6,7 @@ export type WsStatus = "connecting" | "open" | "closed" | "error";
 export interface UseWebSocketReturn {
   send: (msg: object) => void;
   lastFrame: FrameMessage | null;
+  lastError: string | null;
   status: WsStatus;
   close: () => void;
 }
@@ -13,12 +14,15 @@ export interface UseWebSocketReturn {
 export function useWebSocket(url: string | null): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const [lastFrame, setLastFrame] = useState<FrameMessage | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
   const [status, setStatus] = useState<WsStatus>("closed");
 
   useEffect(() => {
     if (!url) return;
 
     setStatus("connecting");
+    setLastError(null);
+    setLastFrame(null);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
@@ -26,15 +30,27 @@ export function useWebSocket(url: string | null): UseWebSocketReturn {
 
     ws.onmessage = (evt: MessageEvent) => {
       try {
-        const frame = JSON.parse(evt.data as string) as FrameMessage;
-        setLastFrame(frame);
+        const parsed = JSON.parse(evt.data as string) as Record<string, unknown>;
+        if (typeof parsed.error === "string") {
+          setLastError(parsed.error);
+          return;
+        }
+        setLastFrame(parsed as unknown as FrameMessage);
       } catch {
         // ignore malformed frames
       }
     };
 
     ws.onerror = () => setStatus("error");
-    ws.onclose = () => setStatus("closed");
+    ws.onclose = (evt: CloseEvent) => {
+      if (evt.code === 4004) {
+        setLastError((prev) =>
+          prev ??
+          "Session expired or invalid (e.g. page remounted). Press Start again.",
+        );
+      }
+      setStatus("closed");
+    };
 
     return () => {
       ws.onopen = null;
@@ -58,5 +74,5 @@ export function useWebSocket(url: string | null): UseWebSocketReturn {
     wsRef.current?.close();
   }, []);
 
-  return { send, lastFrame, status, close };
+  return { send, lastFrame, lastError, status, close };
 }

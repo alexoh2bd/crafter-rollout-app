@@ -1,4 +1,4 @@
-import type { CheckpointMeta } from "../types";
+import type { CheckpointMeta, WMGoalsResponse } from "../types";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 export const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
@@ -35,6 +35,12 @@ export async function downloadRollout(sessionId: string): Promise<Blob> {
   const res = await fetch(`${API_URL}/api/rollouts/${sessionId}/download`);
   if (!res.ok) throw new Error(`downloadRollout failed: ${res.status}`);
   return res.blob();
+}
+
+export async function listWMGoals(): Promise<WMGoalsResponse> {
+  const res = await fetch(`${API_URL}/api/wm/goals`);
+  if (!res.ok) throw new Error(`listWMGoals failed: ${res.status}`);
+  return res.json();
 }
 
 export { API_URL };

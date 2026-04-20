@@ -41,27 +41,40 @@ class ActionResult:
 
 
 class _CrafterActorCritic(nn.Module):
-    """CNN actor-critic for 64×64×3 Crafter obs → 17 logits + value."""
+    """CNN actor-critic matching teacherPPO.ActorCritic exactly.
+
+    Architecture (64×64×3 → 17 logits + value):
+      cnn:    Conv(3→32,k=8,s=4) → Conv(32→64,k=4,s=2) → Conv(64→64,k=3,s=1) → Flatten
+      shared: Linear(1024→512) + ReLU
+      actor:  Linear(512→17)
+      critic: Linear(512→1)
+
+    Key names mirror the training checkpoint so load_state_dict works directly.
+    """
 
     def __init__(self) -> None:
         super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=4, stride=2),
+        self.cnn = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=8, stride=4),   # (B,3,64,64) → (B,32,15,15)
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),  # → (B,64,6,6)
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1),  # → (B,64,4,4)
+            nn.ReLU(),
+            nn.Flatten(),                                 # → (B,1024)
+        )
+        cnn_out = 64 * 4 * 4  # 1024
+        self.shared = nn.Sequential(
+            nn.Linear(cnn_out, 512),
             nn.ReLU(),
         )
-        flat = 128 * 6 * 6
-        self.fc = nn.Linear(flat, 128)
-        self.pi = nn.Linear(128, N_ACTIONS)
-        self.vf = nn.Linear(128, 1)
+        self.actor = nn.Linear(512, N_ACTIONS)
+        self.critic = nn.Linear(512, 1)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        z = self.features(x).flatten(1)
-        h = torch.relu(self.fc(z))
-        return self.pi(h), self.vf(h)
+        # x: (B, 3, 64, 64) float32 in [0, 1]
+        h = self.shared(self.cnn(x))
+        return self.actor(h), self.critic(h)
 
 
 def _obs_to_tensor(obs: np.ndarray) -> torch.Tensor:
@@ -134,11 +147,22 @@ class _TorchPolicyBackend:
                 state = obj["state_dict"]  # type: ignore[assignment]
             elif "model_state_dict" in obj and isinstance(obj["model_state_dict"], dict):
                 state = obj["model_state_dict"]  # type: ignore[assignment]
+            # teacherPPO.py saves {"policy": policy.state_dict()}
+            elif "policy" in obj and isinstance(obj["policy"], dict):
+                state = obj["policy"]  # type: ignore[assignment]
             elif all(isinstance(v, torch.Tensor) for v in obj.values()):
                 state = obj  # type: ignore[assignment]
             else:
-                # try first tensor-valued dict-like
-                state = {k: v for k, v in obj.items() if isinstance(v, torch.Tensor)}
+                # last resort: collect any nested dict that contains tensors
+                for candidate_key in obj:
+                    candidate = obj[candidate_key]
+                    if isinstance(candidate, dict) and candidate and all(
+                        isinstance(v, torch.Tensor) for v in candidate.values()
+                    ):
+                        state = candidate  # type: ignore[assignment]
+                        break
+                else:
+                    state = {k: v for k, v in obj.items() if isinstance(v, torch.Tensor)}
                 if not state:
                     raise ValueError(
                         f"Could not interpret checkpoint dict keys: {list(obj.keys())[:20]}"
@@ -146,7 +170,9 @@ class _TorchPolicyBackend:
         else:
             raise ValueError(f"Unsupported checkpoint type: {type(obj)}")
 
-        for prefix in ("module.", "actor.", "policy.", "net."):
+        # Strip DataParallel / wrapper prefixes but NOT "actor." since that is
+        # a legitimate module name in the teacherPPO architecture.
+        for prefix in ("module.", "net."):
             state = _strip_prefix(state, [prefix])
 
         net = _CrafterActorCritic()

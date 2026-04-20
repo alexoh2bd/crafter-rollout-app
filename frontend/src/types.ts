@@ -3,7 +3,7 @@
  * Expanded in subsequent PRs as schemas are defined.
  */
 
-export type SessionMode = "human" | "agent" | "imagination";
+export type SessionMode = "human" | "agent" | "imagination" | "wm_base" | "hwm";
 
 export interface CheckpointMeta {
   checkpoint_id: string;
@@ -47,6 +47,16 @@ export interface FrameMessage {
   value_estimate: number | null;
   seed: number;
   timestamp: string;
+  // World-model planning metadata (wm_base / hwm modes)
+  planning_ms: number | null;
+  z_goal_dist: number | null;
+  model_type: string | null;
+}
+
+export interface WMGoalsResponse {
+  goals: string[];
+  wm_base_available: boolean;
+  hwm_available: boolean;
 }
 
 export interface ImaginationRollout {

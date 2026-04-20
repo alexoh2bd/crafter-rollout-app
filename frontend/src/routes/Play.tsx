@@ -14,7 +14,7 @@ import {
 
 export default function Play() {
   const navigate = useNavigate();
-  const { phase, frame, start, sendAction, stop, download } =
+  const { phase, frame, error, start, sendAction, stop, download } =
     useGameSession("human");
 
   useEffect(() => {
@@ -62,6 +62,11 @@ export default function Play() {
           {phase === "idle" && (
             <p className="text-gray-500 text-sm text-center max-w-md">
               Press Start, then use the keybindings below while playing.
+            </p>
+          )}
+          {phase === "error" && error && (
+            <p className="text-red-400 text-sm font-medium max-w-md text-center">
+              {error}
             </p>
           )}
           {phase === "done" && (

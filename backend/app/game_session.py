@@ -31,7 +31,7 @@ class GameSession:
 
     def __init__(
         self,
-        mode: Literal["human", "agent", "imagination"] = "human",
+        mode: Literal["human", "agent", "imagination", "wm_base", "hwm"] = "human",
         seed: int | None = None,
         encoder: Encoder | None = None,
         world_model: WorldModel | None = None,
