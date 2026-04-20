@@ -1,4 +1,4 @@
-import type { CheckpointMeta, WMGoalsResponse } from "../types";
+import type { CheckpointMeta, WMGoalsResponse, SessionMode } from "../types";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 export const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
@@ -7,9 +7,9 @@ export async function healthCheck(): Promise<{ status: string }> {
   const res = await fetch(`${API_URL}/api/health`);
   return res.json();
 }
-
+// ...
 export async function createSession(
-  mode: "human" | "agent" | "imagination",
+  mode: SessionMode,
   seed?: number,
 ): Promise<{ session_id: string; seed: number }> {
   const res = await fetch(`${API_URL}/api/sessions`, {
