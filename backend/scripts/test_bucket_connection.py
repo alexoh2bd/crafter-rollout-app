@@ -14,7 +14,7 @@ Nothing secret is printed — only which env *names* were used and S3 HEAD/GET r
 
 Supported names (first non-empty wins):
 
-  BUCKET or AWS_S3_BUCKET or S3_BUCKET
+  BUCKET or AWS_S3_BUCKET or AWS_S3_BUCKET_NAME or S3_BUCKET
   ENDPOINT or AWS_ENDPOINT_URL or AWS_S3_ENDPOINT or S3_ENDPOINT
   ACCESS_KEY_ID or AWS_ACCESS_KEY_ID
   SECRET_ACCESS_KEY or AWS_SECRET_ACCESS_KEY
@@ -84,7 +84,7 @@ def main() -> int:
             "(Dashboard → service → Variables), or reference your Bucket resource, or run:\n"
             "    railway variable set BUCKET=… ENDPOINT=… ACCESS_KEY_ID=… SECRET_ACCESS_KEY=…\n"
             "  (multiple KEY=VALUE arguments; use quotes if values contain spaces)\n"
-            "  Aliases also work: AWS_S3_BUCKET, AWS_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.",
+            "  Aliases also work: AWS_S3_BUCKET_NAME, AWS_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.",
             file=sys.stderr,
         )
         return 1

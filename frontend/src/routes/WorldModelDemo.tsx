@@ -235,12 +235,37 @@ export default function WorldModelDemo() {
             !wm_base_ok &&
             goalsData.checkpoint_source === "none" &&
             !prodLocalApi && (
-              <p className="text-amber-200/90 text-xs border border-amber-800/60 bg-amber-950/40 rounded-lg px-3 py-2">
-                Base WM is not loaded on the server. On Railway, set{" "}
-                <code className="text-amber-100">CHECKPOINTS_INFERENCE_SOURCE=s3</code> with bucket
-                credentials, or place <code className="text-amber-100">lewm_base.pt</code> under{" "}
-                <code className="text-amber-100">CHECKPOINTS_DIR</code>, then restart the API.
-              </p>
+              <div
+                role="status"
+                className="text-amber-200/90 text-xs border border-amber-800/60 bg-amber-950/40 rounded-lg px-3 py-2 space-y-2 leading-relaxed"
+              >
+                <p className="font-medium text-amber-100">
+                  This API did not load <code className="font-mono text-amber-50">lewm_base.pt</code>{" "}
+                  (checkpoint source: none).
+                </p>
+                <ul className="list-disc pl-4 space-y-1.5 text-amber-200/85">
+                  <li>
+                    <span className="text-amber-100/95">From S3:</span>{" "}
+                    <code className="text-amber-50">CHECKPOINTS_INFERENCE_SOURCE=s3</code> plus bucket
+                    credentials. Common AWS-style names:{" "}
+                    <code className="text-amber-50">AWS_S3_BUCKET_NAME</code>,{" "}
+                    <code className="text-amber-50">AWS_ENDPOINT_URL</code>,{" "}
+                    <code className="text-amber-50">AWS_ACCESS_KEY_ID</code>,{" "}
+                    <code className="text-amber-50">AWS_SECRET_ACCESS_KEY</code>,{" "}
+                    <code className="text-amber-50">AWS_DEFAULT_REGION</code> (aliases like{" "}
+                    <code className="text-amber-50">BUCKET</code> / <code className="text-amber-50">ENDPOINT</code>{" "}
+                    also work). Upload <code className="text-amber-50">lewm_base.pt</code> under your
+                    prefix, then redeploy / restart.{" "}
+                    <code className="text-amber-50">CHECKPOINT_UPLOAD_SECRET</code> is only for the HTTP
+                    upload API, not S3 inference.
+                  </li>
+                  <li>
+                    <span className="text-amber-100/95">From disk:</span> set{" "}
+                    <code className="text-amber-50">CHECKPOINTS_DIR</code> to your volume path, put{" "}
+                    <code className="text-amber-50">lewm_base.pt</code> there, restart.
+                  </li>
+                </ul>
+              </div>
             )}
 
           <div className="flex flex-wrap items-end gap-6">

@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
     if wants_s3_inference_env() and not credentials_configured():
         raise RuntimeError(
             "CHECKPOINTS_INFERENCE_SOURCE is set but bucket credentials are missing "
-            "(BUCKET, ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY)."
+            "(BUCKET / AWS_S3_BUCKET_NAME, ENDPOINT / AWS_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)."
         )
 
     _ensure_manifest_seed()

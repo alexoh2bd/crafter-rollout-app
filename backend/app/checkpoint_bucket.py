@@ -6,7 +6,7 @@ Primary env names (Railway bucket → service references):
 
 Also accepted (AWS-style / other templates; first non-empty wins):
 
-  AWS_S3_BUCKET or S3_BUCKET for bucket name
+  AWS_S3_BUCKET, AWS_S3_BUCKET_NAME, or S3_BUCKET for bucket name
   AWS_ENDPOINT_URL or AWS_S3_ENDPOINT or S3_ENDPOINT for the S3 API URL
   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
   AWS_DEFAULT_REGION or AWS_REGION
@@ -37,7 +37,7 @@ _DEFAULT_PREFIX = "checkpoints"
 
 # Railway bucket UI uses BUCKET / ENDPOINT / ACCESS_KEY_ID / SECRET_ACCESS_KEY.
 # AWS SDK presets (and some templates) often expose AWS_* names — accept both.
-_BUCKET_KEYS = ("BUCKET", "AWS_S3_BUCKET", "S3_BUCKET")
+_BUCKET_KEYS = ("BUCKET", "AWS_S3_BUCKET", "AWS_S3_BUCKET_NAME", "S3_BUCKET")
 _ENDPOINT_KEYS = ("ENDPOINT", "AWS_ENDPOINT_URL", "AWS_S3_ENDPOINT", "S3_ENDPOINT")
 _ACCESS_KEYS = ("ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID")
 _SECRET_KEYS = ("SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY")
@@ -129,7 +129,7 @@ def build_s3_client() -> tuple[Any, str]:
     bucket, endpoint, access, secret, region = bucket_credentials()
     missing: list[str] = []
     if not bucket:
-        missing.append("BUCKET (or AWS_S3_BUCKET)")
+        missing.append("BUCKET (or AWS_S3_BUCKET / AWS_S3_BUCKET_NAME)")
     if not endpoint:
         missing.append("ENDPOINT (or AWS_ENDPOINT_URL)")
     if not access:
