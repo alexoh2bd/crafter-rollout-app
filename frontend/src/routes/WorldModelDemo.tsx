@@ -8,7 +8,7 @@ import LatentHeatmap from "../components/LatentHeatmap";
 import SessionControls from "../components/SessionControls";
 import PlanningInfo from "../components/PlanningInfo";
 
-type WMMode = "wm_base" | "hwm";
+type WMMode = "wm_base" | "hwm" | "random_policy";
 
 const MODE_META: Record<WMMode, { label: string; description: string }> = {
   wm_base: {
@@ -19,6 +19,10 @@ const MODE_META: Record<WMMode, { label: string; description: string }> = {
     label: "Hierarchical WM",
     description: "Two-level CEM: macro-actions from ActionEncoder + HighLevelPredictor.",
   },
+  random_policy: {
+    label: "Random policy",
+    description: "Uniform random actions (no neural network). Uses the same rollout capture as other modes.",
+  },
 };
 
 interface AdvancedConfig {
@@ -26,6 +30,8 @@ interface AdvancedConfig {
   H_hi: number;
   n_samples: number;
   n_iters: number;
+  /** Agent random-policy mode only */
+  fps: number;
 }
 
 const DEFAULT_CONFIG: AdvancedConfig = {
@@ -33,6 +39,7 @@ const DEFAULT_CONFIG: AdvancedConfig = {
   H_hi: 3,
   n_samples: 100,
   n_iters: 3,
+  fps: 4,
 };
 
 function apiHostLabel(): string {
@@ -85,10 +92,11 @@ export default function WorldModelDemo() {
   const [goalsError, setGoalsError] = useState<string | null>(null);
   const [goalsLoading, setGoalsLoading] = useState(true);
 
-  const activeMode: SessionMode = wmMode;
+  const sessionMode: SessionMode =
+    wmMode === "random_policy" ? "agent" : wmMode;
 
   const { phase, frame, error, start, stop, download } =
-    useGameSession(activeMode);
+    useGameSession(sessionMode);
 
   useEffect(() => {
     setGoalsLoading(true);
@@ -104,6 +112,13 @@ export default function WorldModelDemo() {
   }, []);
 
   const handleStart = () => {
+    if (wmMode === "random_policy") {
+      start({
+        checkpointId: "random",
+        fps: config.fps,
+      });
+      return;
+    }
     start({
       wmAchievement: achievement || undefined,
       wmHLo: config.H_lo,
@@ -119,7 +134,19 @@ export default function WorldModelDemo() {
   const prodLocalApi = isProductionBuildPointingAtLocalhost();
   const goals = goalsData?.goals ?? [];
 
-  const modeAvailable = wmMode === "wm_base" ? wm_base_ok : hwm_ok;
+  const modeAvailable =
+    wmMode === "random_policy"
+      ? true
+      : wmMode === "wm_base"
+        ? wm_base_ok
+        : hwm_ok;
+
+  const isTabAvailable = (m: WMMode) => {
+    if (goalsError) return false;
+    if (m === "random_policy") return true;
+    if (goalsLoading) return false;
+    return m === "wm_base" ? wm_base_ok : hwm_ok;
+  };
   const ckSource = goalsData?.checkpoint_source;
   const latentDim = goalsData?.latent_dim;
 
@@ -185,23 +212,27 @@ export default function WorldModelDemo() {
       {!isActive && (
         <div className="px-6 py-4 bg-gray-900 border-b border-gray-800 space-y-4">
           {/* Model selector tabs */}
-          <div className="flex gap-2">
-            {(["wm_base", "hwm"] as WMMode[]).map((m) => {
-              const available = m === "wm_base" ? wm_base_ok : hwm_ok;
+          <div className="flex flex-wrap gap-2">
+            {(["wm_base", "hwm", "random_policy"] as const).map((m) => {
+              const available = isTabAvailable(m);
               const active = wmMode === m;
               const showUnavailable =
-                !goalsLoading && !available && !prodLocalApi && !goalsError;
+                !goalsLoading &&
+                !available &&
+                !prodLocalApi &&
+                !goalsError &&
+                m !== "random_policy";
               return (
                 <button
                   key={m}
                   onClick={() => setWmMode(m)}
-                  disabled={!available || goalsLoading || !!goalsError}
+                  disabled={!available}
                   title={
-                    goalsLoading
-                      ? "Loading model status…"
-                      : goalsError
-                        ? "Could not reach API"
-                        : !available
+                    goalsError
+                      ? "Could not reach API"
+                      : goalsLoading && m !== "random_policy"
+                        ? "Loading model status…"
+                        : !available && m !== "random_policy"
                           ? "Checkpoint not loaded on server"
                           : MODE_META[m].description
                   }
@@ -212,7 +243,7 @@ export default function WorldModelDemo() {
                     }`}
                 >
                   {MODE_META[m].label}
-                  {goalsLoading && (
+                  {goalsLoading && m !== "random_policy" && (
                     <span className="ml-2 text-xs text-gray-500">(…)</span>
                   )}
                   {showUnavailable && (
@@ -231,6 +262,7 @@ export default function WorldModelDemo() {
           )}
 
           {!goalsLoading &&
+            wmMode !== "random_policy" &&
             goalsData &&
             !wm_base_ok &&
             goalsData.checkpoint_source === "none" &&
@@ -268,81 +300,96 @@ export default function WorldModelDemo() {
               </div>
             )}
 
-          <div className="flex flex-wrap items-end gap-6">
-            {/* Achievement selector */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-400">Goal achievement</label>
-              {goals.length > 0 ? (
-                <select
-                  value={achievement}
-                  onChange={(e) => setAchievement(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500"
-                >
-                  <option value="">— no goal (random exploration) —</option>
-                  {goals.map((g) => (
-                    <option key={g} value={g}>
-                      {g.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  placeholder="e.g. collect_wood"
-                  value={achievement}
-                  onChange={(e) => setAchievement(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-1.5 text-sm w-52 focus:outline-none focus:border-violet-500"
-                />
-              )}
-            </div>
-
-            {/* Advanced config toggle */}
-            <button
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="text-xs text-gray-400 hover:text-white underline underline-offset-2 pb-1.5"
-            >
-              {showAdvanced ? "Hide" : "Show"} advanced config
-            </button>
-          </div>
-
-          {/* Advanced sliders */}
-          {showAdvanced && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg">
+          {wmMode === "random_policy" ? (
+            <div className="max-w-md">
               <SliderRow
-                label="H_lo (horizon)"
-                value={config.H_lo}
-                min={3}
-                max={20}
-                step={1}
-                onChange={(v) => setConfig((c) => ({ ...c, H_lo: v }))}
-              />
-              {wmMode === "hwm" && (
-                <SliderRow
-                  label="H_hi (macro)"
-                  value={config.H_hi}
-                  min={1}
-                  max={6}
-                  step={1}
-                  onChange={(v) => setConfig((c) => ({ ...c, H_hi: v }))}
-                />
-              )}
-              <SliderRow
-                label="Samples"
-                value={config.n_samples}
-                min={20}
-                max={500}
-                step={10}
-                onChange={(v) => setConfig((c) => ({ ...c, n_samples: v }))}
-              />
-              <SliderRow
-                label="CEM iters"
-                value={config.n_iters}
+                label="FPS"
+                value={config.fps}
                 min={1}
-                max={8}
+                max={30}
                 step={1}
-                onChange={(v) => setConfig((c) => ({ ...c, n_iters: v }))}
+                onChange={(v) => setConfig((c) => ({ ...c, fps: v }))}
               />
             </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-6">
+                {/* Achievement selector */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-gray-400">Goal achievement</label>
+                  {goals.length > 0 ? (
+                    <select
+                      value={achievement}
+                      onChange={(e) => setAchievement(e.target.value)}
+                      className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500"
+                    >
+                      <option value="">— no goal (random exploration) —</option>
+                      {goals.map((g) => (
+                        <option key={g} value={g}>
+                          {g.replace(/_/g, " ")}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="e.g. collect_wood"
+                      value={achievement}
+                      onChange={(e) => setAchievement(e.target.value)}
+                      className="bg-gray-800 border border-gray-700 text-white rounded px-3 py-1.5 text-sm w-52 focus:outline-none focus:border-violet-500"
+                    />
+                  )}
+                </div>
+
+                {/* Advanced config toggle */}
+                <button
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="text-xs text-gray-400 hover:text-white underline underline-offset-2 pb-1.5"
+                >
+                  {showAdvanced ? "Hide" : "Show"} advanced config
+                </button>
+              </div>
+
+              {/* Advanced sliders */}
+              {showAdvanced && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg">
+                  <SliderRow
+                    label="H_lo (horizon)"
+                    value={config.H_lo}
+                    min={3}
+                    max={20}
+                    step={1}
+                    onChange={(v) => setConfig((c) => ({ ...c, H_lo: v }))}
+                  />
+                  {wmMode === "hwm" && (
+                    <SliderRow
+                      label="H_hi (macro)"
+                      value={config.H_hi}
+                      min={1}
+                      max={6}
+                      step={1}
+                      onChange={(v) => setConfig((c) => ({ ...c, H_hi: v }))}
+                    />
+                  )}
+                  <SliderRow
+                    label="Samples"
+                    value={config.n_samples}
+                    min={20}
+                    max={500}
+                    step={10}
+                    onChange={(v) => setConfig((c) => ({ ...c, n_samples: v }))}
+                  />
+                  <SliderRow
+                    label="CEM iters"
+                    value={config.n_iters}
+                    min={1}
+                    max={8}
+                    step={1}
+                    onChange={(v) => setConfig((c) => ({ ...c, n_iters: v }))}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {/* Mode description */}
@@ -367,10 +414,16 @@ export default function WorldModelDemo() {
               </span>
               <LatentHeatmap latent={frame?.latent ?? null} size={512} />
               <p className="text-gray-600 text-[11px] max-w-[28rem] text-center leading-snug">
-                Same WebSocket stream as the game: each step runs planning on the server, then
-                encodes the new frame. With{" "}
-                <code className="text-gray-500">CHECKPOINTS_INFERENCE_SOURCE=s3</code>, weights stay
-                in RAM after load from the bucket.
+                {wmMode === "random_policy" ? (
+                  <>LeWM latent is only filled when the server runs the world-model encoder (Base/HWM modes).</>
+                ) : (
+                  <>
+                    Same WebSocket stream as the game: each step runs planning on the server, then
+                    encodes the new frame. With{" "}
+                    <code className="text-gray-500">CHECKPOINTS_INFERENCE_SOURCE=s3</code>, weights stay
+                    in RAM after load from the bucket.
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -378,15 +431,28 @@ export default function WorldModelDemo() {
           <div className="flex flex-col items-center text-center">
             {phase === "idle" && (
               <p className="text-gray-500 text-sm">
-                {modeAvailable
-                  ? "Configure a goal and press Start."
-                  : "This model is not available on the API — upload checkpoints or enable S3 inference on the server."}
+                {wmMode === "random_policy"
+                  ? modeAvailable
+                    ? "Adjust FPS if you want, then press Start."
+                    : "Cannot reach API."
+                  : modeAvailable
+                    ? "Configure a goal and press Start."
+                    : "This model is not available on the API — upload checkpoints or enable S3 inference on the server."}
               </p>
             )}
             {phase === "playing" && (
               <p className="text-gray-400 text-xs max-w-xl">
-                Streaming — step {frame?.step ?? "…"} · game view and latent update after each
-                plan_step on the backend.
+                {wmMode === "random_policy" ? (
+                  <>
+                    Streaming — step {frame?.step ?? "…"} · random actions at ~{config.fps} FPS (no
+                    world-model planning).
+                  </>
+                ) : (
+                  <>
+                    Streaming — step {frame?.step ?? "…"} · game view and latent update after each
+                    plan_step on the backend.
+                  </>
+                )}
               </p>
             )}
             {phase === "error" && error && (

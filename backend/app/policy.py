@@ -292,6 +292,10 @@ class PolicyRegistry:
             return cls._cache[checkpoint_id]
         for entry in cls._manifest():
             if entry["checkpoint_id"] == checkpoint_id:
+                if entry.get("ckpt_type") == "random":
+                    policy = Policy(ckpt_type="random")
+                    cls._cache[checkpoint_id] = policy
+                    return policy
                 rel = entry["path"]
                 from .checkpoint_bucket import fetch_object_bytes, inference_from_bucket, object_exists
 
