@@ -28,9 +28,33 @@ function deriveWsBase(): string {
 
 export const WS_URL = deriveWsBase();
 
+/** Read JSON from a fetch Response; if the body is HTML (SPA/404 page), throw a clear error. */
+async function parseJsonResponse(res: Response): Promise<unknown> {
+  const text = await res.text();
+  const t = text.trim();
+  if (
+    t.startsWith("<!") ||
+    t.toLowerCase().startsWith("<html") ||
+    t.toLowerCase().startsWith("<!doctype")
+  ) {
+    throw new Error(
+      "API returned HTML instead of JSON. Usually VITE_API_URL points at this Vercel site (or another " +
+        "frontend), not your FastAPI backend. Set VITE_API_URL to your Railway API base URL " +
+        "(https://…). On Vercel, add the same variable for Preview if deploy-branch previews fail while main works.",
+    );
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Invalid JSON from ${res.url}: ${msg}`);
+  }
+}
+
 export async function healthCheck(): Promise<{ status: string }> {
   const res = await fetch(`${API_URL}/api/health`);
-  return res.json();
+  if (!res.ok) throw new Error(`healthCheck failed: ${res.status}`);
+  return (await parseJsonResponse(res)) as { status: string };
 }
 // ...
 export async function createSession(
@@ -43,7 +67,7 @@ export async function createSession(
     body: JSON.stringify({ mode, seed }),
   });
   if (!res.ok) throw new Error(`createSession failed: ${res.status}`);
-  return res.json();
+  return (await parseJsonResponse(res)) as { session_id: string; seed: number };
 }
 
 export async function closeSession(sessionId: string): Promise<void> {
@@ -53,7 +77,7 @@ export async function closeSession(sessionId: string): Promise<void> {
 export async function listCheckpoints(): Promise<CheckpointMeta[]> {
   const res = await fetch(`${API_URL}/api/checkpoints`);
   if (!res.ok) throw new Error(`listCheckpoints failed: ${res.status}`);
-  return res.json();
+  return (await parseJsonResponse(res)) as CheckpointMeta[];
 }
 
 export async function downloadRollout(sessionId: string): Promise<Blob> {
@@ -65,7 +89,7 @@ export async function downloadRollout(sessionId: string): Promise<Blob> {
 export async function listWMGoals(): Promise<WMGoalsResponse> {
   const res = await fetch(`${API_URL}/api/wm/goals`);
   if (!res.ok) throw new Error(`listWMGoals failed: ${res.status}`);
-  const data = (await res.json()) as Partial<WMGoalsResponse>;
+  const data = (await parseJsonResponse(res)) as Partial<WMGoalsResponse>;
   return {
     goals: data.goals ?? [],
     wm_base_available: data.wm_base_available ?? false,
