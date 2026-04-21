@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SessionMode, WMGoalsResponse } from "../types";
-import { API_URL, listWMGoals } from "../lib/api";
+import { API_URL, isProductionBuildPointingAtLocalhost, listWMGoals } from "../lib/api";
 import { useGameSession } from "../hooks/useGameSession";
 import GameCanvas from "../components/GameCanvas";
 import LatentHeatmap from "../components/LatentHeatmap";
@@ -83,6 +83,7 @@ export default function WorldModelDemo() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [goalsData, setGoalsData] = useState<WMGoalsResponse | null>(null);
   const [goalsError, setGoalsError] = useState<string | null>(null);
+  const [goalsLoading, setGoalsLoading] = useState(true);
 
   const activeMode: SessionMode = wmMode;
 
@@ -90,11 +91,16 @@ export default function WorldModelDemo() {
     useGameSession(activeMode);
 
   useEffect(() => {
+    setGoalsLoading(true);
     listWMGoals()
-      .then(setGoalsData)
+      .then((data) => {
+        setGoalsData(data);
+        setGoalsError(null);
+      })
       .catch((e: unknown) =>
         setGoalsError(e instanceof Error ? e.message : "Failed to load goals"),
-      );
+      )
+      .finally(() => setGoalsLoading(false));
   }, []);
 
   const handleStart = () => {
@@ -110,6 +116,7 @@ export default function WorldModelDemo() {
   const isActive = phase === "playing" || phase === "connecting";
   const wm_base_ok = goalsData?.wm_base_available ?? false;
   const hwm_ok = goalsData?.hwm_available ?? false;
+  const prodLocalApi = isProductionBuildPointingAtLocalhost();
   const goals = goalsData?.goals ?? [];
 
   const modeAvailable = wmMode === "wm_base" ? wm_base_ok : hwm_ok;
@@ -134,6 +141,16 @@ export default function WorldModelDemo() {
           onDownload={download}
         />
       </div>
+
+      {prodLocalApi && (
+        <div className="px-6 py-3 bg-amber-950/90 border-b border-amber-800 text-amber-100 text-xs leading-relaxed">
+          <strong className="font-semibold">API URL misconfigured for production.</strong> This
+          build uses <code className="text-amber-200">localhost</code> (no{" "}
+          <code className="text-amber-200">VITE_API_URL</code> at build time). Set{" "}
+          <code className="text-amber-200">VITE_API_URL</code> to your backend (e.g. Railway
+          HTTPS URL) in the Vercel project → Settings → Environment Variables, then redeploy.
+        </div>
+      )}
 
       {/* Backend + weight source — matches CHECKPOINTS_INFERENCE_SOURCE=s3 on the API */}
       {goalsData && (
@@ -172,12 +189,22 @@ export default function WorldModelDemo() {
             {(["wm_base", "hwm"] as WMMode[]).map((m) => {
               const available = m === "wm_base" ? wm_base_ok : hwm_ok;
               const active = wmMode === m;
+              const showUnavailable =
+                !goalsLoading && !available && !prodLocalApi && !goalsError;
               return (
                 <button
                   key={m}
                   onClick={() => setWmMode(m)}
-                  disabled={!available}
-                  title={!available ? "Checkpoint not loaded" : MODE_META[m].description}
+                  disabled={!available || goalsLoading || !!goalsError}
+                  title={
+                    goalsLoading
+                      ? "Loading model status…"
+                      : goalsError
+                        ? "Could not reach API"
+                        : !available
+                          ? "Checkpoint not loaded on server"
+                          : MODE_META[m].description
+                  }
                   className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors
                     ${active
                       ? "bg-violet-700 border-violet-500 text-white"
@@ -185,7 +212,10 @@ export default function WorldModelDemo() {
                     }`}
                 >
                   {MODE_META[m].label}
-                  {!available && (
+                  {goalsLoading && (
+                    <span className="ml-2 text-xs text-gray-500">(…)</span>
+                  )}
+                  {showUnavailable && (
                     <span className="ml-2 text-xs text-gray-500">(unavailable)</span>
                   )}
                 </button>
@@ -194,8 +224,24 @@ export default function WorldModelDemo() {
           </div>
 
           {goalsError && (
-            <p className="text-yellow-500 text-xs">{goalsError}</p>
+            <p className="text-yellow-500 text-xs">
+              {goalsError}
+              {prodLocalApi && " — fix VITE_API_URL on Vercel and redeploy."}
+            </p>
           )}
+
+          {!goalsLoading &&
+            goalsData &&
+            !wm_base_ok &&
+            goalsData.checkpoint_source === "none" &&
+            !prodLocalApi && (
+              <p className="text-amber-200/90 text-xs border border-amber-800/60 bg-amber-950/40 rounded-lg px-3 py-2">
+                Base WM is not loaded on the server. On Railway, set{" "}
+                <code className="text-amber-100">CHECKPOINTS_INFERENCE_SOURCE=s3</code> with bucket
+                credentials, or place <code className="text-amber-100">lewm_base.pt</code> under{" "}
+                <code className="text-amber-100">CHECKPOINTS_DIR</code>, then restart the API.
+              </p>
+            )}
 
           <div className="flex flex-wrap items-end gap-6">
             {/* Achievement selector */}

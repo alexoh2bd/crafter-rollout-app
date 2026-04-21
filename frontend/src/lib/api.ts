@@ -2,6 +2,17 @@ import type { CheckpointMeta, WMGoalsResponse, SessionMode } from "../types";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
+/** True when the production bundle still targets localhost (common Vercel misconfig). */
+export function isProductionBuildPointingAtLocalhost(): boolean {
+  if (!import.meta.env.PROD) return false;
+  try {
+    const u = new URL(API_URL);
+    return u.hostname === "localhost" || u.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 /** WebSocket base URL: VITE_WS_URL, or derived from VITE_API_URL (http→ws, https→wss). */
 function deriveWsBase(): string {
   const explicit = import.meta.env.VITE_WS_URL as string | undefined;

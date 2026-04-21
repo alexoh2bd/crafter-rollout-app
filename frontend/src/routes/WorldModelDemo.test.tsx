@@ -15,10 +15,14 @@ vi.mock("react-router-dom", async (importOriginal) => {
   return { ...mod, useNavigate: () => navigateMock };
 });
 
-vi.mock("../lib/api", () => ({
-  API_URL: "http://localhost:8000",
-  listWMGoals: (...args: unknown[]) => listWMGoalsMock(...args),
-}));
+vi.mock("../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/api")>();
+  return {
+    ...actual,
+    API_URL: "http://localhost:8000",
+    listWMGoals: (...args: unknown[]) => listWMGoalsMock(...args),
+  };
+});
 
 vi.mock("../hooks/useGameSession", () => ({
   useGameSession: (...args: unknown[]) => mockUseGameSession(...args),

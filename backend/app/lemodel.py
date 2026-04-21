@@ -8,7 +8,6 @@ Loss: MSE + SIGReg(lambda=0.1)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 
 # ─── SIGReg ──────────────────────────────────────────────────────────────────
@@ -51,7 +50,6 @@ class SIGReg(nn.Module):
 
         # Epps-Pulley test: compare empirical characteristic function
         # to standard Gaussian's characteristic function at test points
-        n = proj_norm.shape[0]
         t_vals = torch.linspace(0.1, 2.0, self.num_knots,
                                 device=Z.device)  # (K,)
 

@@ -155,7 +155,7 @@ async def lifespan(app: FastAPI):
                     goal_library_path=goal_lib_str,
                 )
                 print(
-                    f"WMBaseAgent ready"
+                    "WMBaseAgent ready"
                     + (
                         f" with {len(_wm_base_agent.list_achievements())} goals"
                         if goal_lib_str
