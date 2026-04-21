@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Scaffold smoke test — verifies pytest collects and runs in PR 1."""
 
 

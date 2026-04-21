@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Generate and save a randomly-initialized placeholder encoder checkpoint.
 
 Usage:

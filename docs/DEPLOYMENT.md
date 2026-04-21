@@ -12,6 +12,23 @@
 4. Enable public networking and note the generated domain.
 5. Healthcheck path: `/api/health`, expected status 200.
 
+### Policy checkpoints (volume + upload)
+
+- **Persist weights on Railway:** attach a volume and set `CHECKPOINTS_DIR` to the mount path (for example `/checkpoints`). On first boot, if that directory has no `manifest.json`, the server copies the bundled [`backend/checkpoints/manifest.json`](backend/checkpoints/manifest.json) from the image so entries like `ppo_teacher` are registered.
+- **Upload API:** `POST /api/checkpoints/upload` (multipart form: `file`, `checkpoint_id`, `display_name`, optional `ckpt_type`, `description`) writes a file named `{checkpoint_id}.pt` under `CHECKPOINTS_DIR` and upserts `manifest.json`. Set `CHECKPOINT_UPLOAD_SECRET` in Railway and send the same value in the `X-Upload-Secret` header. If the secret is unset, upload returns 503 (disabled by default).
+- **Local dev:** place `ppo_teacher.pt` in `backend/checkpoints/` next to `manifest.json` (the `ppo_teacher` entry points at `ppo_teacher.pt`). Binary `*.pt` files are gitignored; only the manifest ships in git.
+
+Example:
+
+```bash
+curl -X POST "https://YOUR_RAILWAY_URL/api/checkpoints/upload" \
+  -H "X-Upload-Secret: $CHECKPOINT_UPLOAD_SECRET" \
+  -F "checkpoint_id=ppo_teacher" \
+  -F "display_name=PPO Teacher" \
+  -F "ckpt_type=ppo" \
+  -F "file=@ppo_teacher.pt"
+```
+
 ## Frontend on Vercel
 
 ### Option A — This repository root (recommended)

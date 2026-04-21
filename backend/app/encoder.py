@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Encoder: maps Crafter observations to 128-d latent vectors."""
 
 from __future__ import annotations

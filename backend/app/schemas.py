@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Pydantic request/response schemas."""
 
 from datetime import datetime
@@ -61,10 +62,28 @@ class FrameMessage(BaseModel):
     value_estimate: float | None
     seed: int
     timestamp: datetime
+    # World-model planning metadata (wm_base / hwm modes only)
+    planning_ms: float | None = None
+    z_goal_dist: float | None = None
+    model_type: str | None = None
+
+
+class ImaginationRollout(BaseModel):
+    """One imagined trajectory from the world model predictor."""
+
+    latents: list[list[float]]   # (horizon+1, latent_dim)
+    pca_2d: list[list[float]]    # (horizon+1, 2) — projected for visualization
+
+
+class ImaginationMessage(BaseModel):
+    """Payload sent by the backend after each imagination step."""
+
+    rollouts: list[ImaginationRollout]  # K parallel imagined trajectories
+    real_pca_2d: list[list[float]]      # (N, 2) real latent history projected
 
 
 class StartSessionRequest(BaseModel):
-    mode: Literal["human", "agent", "imagination"] = "human"
+    mode: Literal["human", "agent", "imagination", "wm_base", "hwm"] = "human"
     seed: int | None = None
 
 

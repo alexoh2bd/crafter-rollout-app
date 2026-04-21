@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Storage smoke tests."""
 
 import json

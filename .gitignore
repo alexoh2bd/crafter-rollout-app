@@ -25,6 +25,7 @@ dist/
 *.ckpt
 *.bin
 *.safetensors
+*.npz
 
 # OS
 .DS_Store
