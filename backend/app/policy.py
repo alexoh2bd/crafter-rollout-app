@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -118,21 +119,39 @@ def _logits_value_from_output(
 class _TorchPolicyBackend:
     """Runs forward on obs; supports JIT, nn.Module, or state_dict into _CrafterActorCritic."""
 
-    def __init__(self, checkpoint_path: str) -> None:
-        path = Path(checkpoint_path)
-        if not path.is_file():
-            raise FileNotFoundError(f"Checkpoint file not found: {path}")
+    def __init__(
+        self,
+        checkpoint_path: str | None = None,
+        *,
+        checkpoint_bytes: bytes | None = None,
+    ) -> None:
+        if (checkpoint_path is None) == (checkpoint_bytes is None):
+            raise ValueError("Provide exactly one of checkpoint_path or checkpoint_bytes")
 
         # 1) TorchScript
-        try:
-            m = torch.jit.load(str(path), map_location="cpu")
-            m.eval()
-            self._model = m
-            return
-        except Exception:
-            pass
-
-        obj = torch.load(str(path), map_location="cpu", weights_only=False)
+        if checkpoint_bytes is not None:
+            try:
+                m = torch.jit.load(io.BytesIO(checkpoint_bytes), map_location="cpu")
+                m.eval()
+                self._model = m
+                return
+            except Exception:
+                pass
+            obj = torch.load(
+                io.BytesIO(checkpoint_bytes), map_location="cpu", weights_only=False
+            )
+        else:
+            path = Path(checkpoint_path)
+            if not path.is_file():
+                raise FileNotFoundError(f"Checkpoint file not found: {path}")
+            try:
+                m = torch.jit.load(str(path), map_location="cpu")
+                m.eval()
+                self._model = m
+                return
+            except Exception:
+                pass
+            obj = torch.load(str(path), map_location="cpu", weights_only=False)
 
         # 2) nn.Module
         if isinstance(obj, nn.Module):
@@ -190,12 +209,23 @@ class _TorchPolicyBackend:
 class Policy:
     """Runs inference for a single policy checkpoint."""
 
-    def __init__(self, checkpoint_path: str, ckpt_type: str) -> None:
+    def __init__(
+        self,
+        checkpoint_path: str | None = None,
+        ckpt_type: str = "random",
+        *,
+        checkpoint_bytes: bytes | None = None,
+    ) -> None:
         self._ckpt_type = ckpt_type
         self._rng = np.random.default_rng()
         self._torch: _TorchPolicyBackend | None = None
         if ckpt_type == "ppo":
-            self._torch = _TorchPolicyBackend(checkpoint_path)
+            if checkpoint_bytes is not None:
+                self._torch = _TorchPolicyBackend(checkpoint_bytes=checkpoint_bytes)
+            elif checkpoint_path is not None:
+                self._torch = _TorchPolicyBackend(checkpoint_path)
+            else:
+                raise ValueError("ppo policy requires checkpoint_path or checkpoint_bytes")
 
     def act(self, obs: np.ndarray) -> ActionResult:
         if self._ckpt_type == "random" or self._torch is None:
@@ -264,6 +294,23 @@ class PolicyRegistry:
         for entry in cls._manifest():
             if entry["checkpoint_id"] == checkpoint_id:
                 rel = entry["path"]
+                from .checkpoint_bucket import fetch_object_bytes, inference_from_bucket, object_exists
+
+                if inference_from_bucket():
+                    if not object_exists(rel):
+                        raise KeyError(
+                            f"Checkpoint object missing in bucket: {rel!r} (id={checkpoint_id!r})"
+                        )
+                    try:
+                        policy = Policy(
+                            ckpt_type=entry["ckpt_type"],
+                            checkpoint_bytes=fetch_object_bytes(rel),
+                        )
+                    except (FileNotFoundError, ValueError, RuntimeError) as e:
+                        raise KeyError(str(e)) from e
+                    cls._cache[checkpoint_id] = policy
+                    return policy
+
                 full = checkpoints_dir() / rel
                 if not full.is_file():
                     raise KeyError(

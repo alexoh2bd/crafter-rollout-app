@@ -1,3 +1,5 @@
+import type { WMCheckpointSource } from "../types";
+
 interface Props {
   modelType: string | null;
   step: number | null;
@@ -5,6 +7,7 @@ interface Props {
   zGoalDist: number | null;
   achievement: string;
   actionName: string | null;
+  checkpointSource?: WMCheckpointSource | null;
 }
 
 const MODEL_LABELS: Record<string, { label: string; color: string }> = {
@@ -21,6 +24,21 @@ function StatRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+const SOURCE_LABELS: Record<string, { label: string; className: string }> = {
+  s3_bucket: {
+    label: "S3 bucket",
+    className: "text-emerald-300 bg-emerald-950/80 border-emerald-700",
+  },
+  local_disk: {
+    label: "Local disk",
+    className: "text-sky-300 bg-sky-950/50 border-sky-700",
+  },
+  none: {
+    label: "No WM",
+    className: "text-gray-500 bg-gray-900 border-gray-700",
+  },
+};
+
 export default function PlanningInfo({
   modelType,
   step,
@@ -28,16 +46,29 @@ export default function PlanningInfo({
   zGoalDist,
   achievement,
   actionName,
+  checkpointSource,
 }: Props) {
   const meta = modelType ? MODEL_LABELS[modelType] : null;
+  const src =
+    checkpointSource && SOURCE_LABELS[checkpointSource]
+      ? SOURCE_LABELS[checkpointSource]
+      : null;
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 space-y-4">
       {/* Model badge */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
           Planning Info
         </h3>
+        {src && (
+          <span
+            className={`text-xs font-medium px-2 py-0.5 rounded border ${src.className}`}
+            title="Where the backend loaded LeWM / HWM weights"
+          >
+            {src.label}
+          </span>
+        )}
         {meta && (
           <span
             className={`text-xs font-semibold px-2 py-0.5 rounded border ${meta.color}`}

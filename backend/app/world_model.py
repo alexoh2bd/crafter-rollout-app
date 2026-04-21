@@ -15,6 +15,8 @@ Checkpoint format (from letrain.py):
 
 from __future__ import annotations
 
+import io
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -58,10 +60,25 @@ class WorldModel:
     unroll the predictor forward.
     """
 
-    def __init__(self, checkpoint_path: str) -> None:
+    def __init__(
+        self,
+        checkpoint_path: str | None = None,
+        *,
+        checkpoint_bytes: bytes | None = None,
+    ) -> None:
+        if (checkpoint_path is None) == (checkpoint_bytes is None):
+            raise ValueError("Provide exactly one of checkpoint_path or checkpoint_bytes")
+
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        ckpt = torch.load(checkpoint_path, map_location=self._device, weights_only=False)
+        if checkpoint_bytes is not None:
+            ckpt = torch.load(
+                io.BytesIO(checkpoint_bytes),
+                map_location=self._device,
+                weights_only=False,
+            )
+        else:
+            ckpt = torch.load(checkpoint_path, map_location=self._device, weights_only=False)
         args: dict = ckpt.get("args", {})
         if not isinstance(args, dict):
             args = vars(args)
@@ -84,7 +101,8 @@ class WorldModel:
         ).to(self._device)
 
         sd = _strip_dataparallel(ckpt["model"])
-        self._model.load_state_dict(sd)
+        # strict=False: newer checkpoints may include buffers (e.g. latent_scale) not in this deploy build.
+        self._model.load_state_dict(sd, strict=False)
         self._model.eval()
 
     @property

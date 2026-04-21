@@ -30,6 +30,17 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from .checkpoint_bucket import (
+    credentials_configured,
+    fetch_object_bytes,
+    inference_from_bucket,
+    object_exists as s3_object_exists,
+    s3_prefix,
+    should_sync_from_bucket,
+    sync_checkpoints_from_bucket,
+    sync_manifest_to_disk,
+    wants_s3_inference_env,
+)
 from .game_session import GameSession
 from .hwm_model import HWMAgent, WMBaseAgent
 from .policy import PolicyRegistry, checkpoints_dir
@@ -63,41 +74,115 @@ def _ensure_manifest_seed() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _store, _world_model, _wm_base_agent, _hwm_agent_template
+    if wants_s3_inference_env() and not credentials_configured():
+        raise RuntimeError(
+            "CHECKPOINTS_INFERENCE_SOURCE is set but bucket credentials are missing "
+            "(BUCKET, ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY)."
+        )
+
     _ensure_manifest_seed()
+    if should_sync_from_bucket():
+        try:
+            sync_checkpoints_from_bucket(checkpoints_dir())
+        except Exception as exc:
+            msg = f"checkpoint bucket sync failed: {exc}"
+            if os.getenv("CHECKPOINTS_S3_REQUIRED", "").strip().lower() in ("1", "true", "yes", "on"):
+                raise RuntimeError(msg) from exc
+            print(f"Warning: {msg}. Using local/bundled checkpoints only.")
     _store = MetadataStore()
 
     wm_path = checkpoints_dir() / "lewm_base.pt"
     goal_lib_path = checkpoints_dir() / "goal_library.npz"
     hwm_path = checkpoints_dir() / "hwm_high.pt"
 
-    if wm_path.is_file():
+    if inference_from_bucket():
         try:
-            _world_model = WorldModel(str(wm_path))
-            print(f"World model loaded from {wm_path} (latent_dim={_world_model.latent_dim})")
-
-            goal_lib_str = str(goal_lib_path) if goal_lib_path.is_file() else None
-            _wm_base_agent = WMBaseAgent(_world_model, goal_library_path=goal_lib_str)
-            print(
-                f"WMBaseAgent ready"
-                + (f" with {len(_wm_base_agent.list_achievements())} goals" if goal_lib_str else " (no goal library)")
-            )
+            sync_manifest_to_disk(checkpoints_dir())
         except Exception as exc:
-            print(f"Warning: failed to load world model from {wm_path}: {exc}")
+            print(f"Warning: could not sync manifest.json from bucket: {exc}")
 
-    if wm_path.is_file() and hwm_path.is_file() and _world_model is not None:
         try:
-            goal_lib_str = str(goal_lib_path) if goal_lib_path.is_file() else None
+            lewm_bytes = fetch_object_bytes("lewm_base.pt")
+            _world_model = WorldModel(checkpoint_bytes=lewm_bytes)
+            print(
+                f"World model loaded from bucket (latent_dim={_world_model.latent_dim})"
+            )
+
+            goal_lib_bytes: bytes | None = None
+            try:
+                goal_lib_bytes = fetch_object_bytes("goal_library.npz")
+            except (FileNotFoundError, RuntimeError):
+                pass
+
+            _wm_base_agent = WMBaseAgent(
+                _world_model,
+                goal_library_bytes=goal_lib_bytes,
+            )
+            print(
+                "WMBaseAgent ready"
+                + (
+                    f" with {len(_wm_base_agent.list_achievements())} goals"
+                    if goal_lib_bytes
+                    else " (no goal library)"
+                )
+            )
+
+            hwm_bytes = fetch_object_bytes("hwm_high.pt")
             _hwm_agent_template = HWMAgent(
                 _world_model,
-                hwm_ckpt_path=str(hwm_path),
-                goal_library_path=goal_lib_str,
+                hwm_checkpoint_bytes=hwm_bytes,
+                goal_library_bytes=goal_lib_bytes,
             )
             print(
-                f"HWMAgent loaded from {hwm_path}"
-                + (f" with {len(_hwm_agent_template.list_achievements())} goals" if goal_lib_str else " (no goal library)")
+                "HWMAgent loaded from bucket"
+                + (
+                    f" with {len(_hwm_agent_template.list_achievements())} goals"
+                    if goal_lib_bytes
+                    else " (no goal library)"
+                )
             )
         except Exception as exc:
-            print(f"Warning: failed to load HWM from {hwm_path}: {exc}")
+            print(f"Warning: failed to load models from bucket: {exc}")
+    else:
+        if wm_path.is_file():
+            try:
+                _world_model = WorldModel(str(wm_path))
+                print(f"World model loaded from {wm_path} (latent_dim={_world_model.latent_dim})")
+
+                goal_lib_str = str(goal_lib_path) if goal_lib_path.is_file() else None
+                _wm_base_agent = WMBaseAgent(
+                    _world_model,
+                    goal_library_path=goal_lib_str,
+                )
+                print(
+                    f"WMBaseAgent ready"
+                    + (
+                        f" with {len(_wm_base_agent.list_achievements())} goals"
+                        if goal_lib_str
+                        else " (no goal library)"
+                    )
+                )
+            except Exception as exc:
+                print(f"Warning: failed to load world model from {wm_path}: {exc}")
+
+        if wm_path.is_file() and hwm_path.is_file() and _world_model is not None:
+            try:
+                goal_lib_str = str(goal_lib_path) if goal_lib_path.is_file() else None
+                _hwm_agent_template = HWMAgent(
+                    _world_model,
+                    hwm_ckpt_path=str(hwm_path),
+                    goal_library_path=goal_lib_str,
+                )
+                print(
+                    f"HWMAgent loaded from {hwm_path}"
+                    + (
+                        f" with {len(_hwm_agent_template.list_achievements())} goals"
+                        if goal_lib_str
+                        else " (no goal library)"
+                    )
+                )
+            except Exception as exc:
+                print(f"Warning: failed to load HWM from {hwm_path}: {exc}")
 
     yield
 
@@ -124,6 +209,15 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+def _wm_checkpoint_source() -> str:
+    """How weights are loaded: S3 inference mode, local disk, or unavailable."""
+    if inference_from_bucket():
+        return "s3_bucket"
+    if _wm_base_agent is not None or _hwm_agent_template is not None:
+        return "local_disk"
+    return "none"
+
+
 @app.get("/api/wm/goals")
 async def list_wm_goals() -> dict:
     """Return available achievements from the goal library, plus model availability flags."""
@@ -134,17 +228,24 @@ async def list_wm_goals() -> dict:
         "goals": goals,
         "wm_base_available": _wm_base_agent is not None,
         "hwm_available": _hwm_agent_template is not None,
+        "checkpoint_source": _wm_checkpoint_source(),
+        "s3_prefix": s3_prefix() if inference_from_bucket() else None,
+        "latent_dim": _world_model.latent_dim if _world_model is not None else None,
     }
 
 
 @app.get("/api/checkpoints")
 async def list_checkpoints() -> list[dict]:
-    """Only list checkpoints whose weight file exists on disk."""
+    """List policy checkpoints that exist locally or in the bucket (S3 inference mode)."""
     out: list[dict] = []
     for c in PolicyRegistry.list_available():
-        full = checkpoints_dir() / c.path
-        if full.is_file():
-            out.append(c.__dict__)
+        if inference_from_bucket():
+            if s3_object_exists(c.path):
+                out.append(c.__dict__)
+        else:
+            full = checkpoints_dir() / c.path
+            if full.is_file():
+                out.append(c.__dict__)
     return out
 
 
@@ -483,14 +584,8 @@ async def _hwm_loop(
     n_iters = int(init.get("n_iters", 3))
     n_elite = max(1, n_samples // 10)
 
-    # Create a fresh per-session HWM agent (stateful subgoal tracking)
-    hwm_path = checkpoints_dir() / "hwm_high.pt"
-    goal_lib_path = checkpoints_dir() / "goal_library.npz"
-    hwm_agent = HWMAgent(
-        _hwm_agent_template._wm,
-        hwm_ckpt_path=str(hwm_path),
-        goal_library_path=str(goal_lib_path) if goal_lib_path.is_file() else None,
-    )
+    # Fresh per-session state; reuse weights loaded at startup (disk or bucket)
+    hwm_agent = _hwm_agent_template.clone_for_session()
 
     try:
         z_goal = hwm_agent.encode_goal(achievement) if achievement else None

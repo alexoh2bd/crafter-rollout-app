@@ -14,6 +14,7 @@ Checkpoint layout under CHECKPOINTS_DIR:
 
 from __future__ import annotations
 
+import io
 import time
 from pathlib import Path
 from typing import Optional
@@ -301,11 +302,18 @@ class _LeWMRolloutWrapper:
 # ── HWM checkpoint loader ──────────────────────────────────────────────────────
 
 def _load_hwm_high(
-    ckpt_path: str,
+    *,
+    ckpt_path: str | None = None,
+    ckpt_bytes: bytes | None = None,
     device: torch.device,
 ) -> tuple[ActionEncoder, HighLevelPredictor, torch.Tensor, torch.Tensor]:
     """Load ActionEncoder + HighLevelPredictor from a saved HWM checkpoint."""
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if (ckpt_path is None) == (ckpt_bytes is None):
+        raise ValueError("Provide exactly one of ckpt_path or ckpt_bytes")
+    if ckpt_bytes is not None:
+        ckpt = torch.load(io.BytesIO(ckpt_bytes), map_location=device, weights_only=False)
+    else:
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     saved_args = ckpt.get("args", {})
 
     action_enc = ActionEncoder(
@@ -341,8 +349,13 @@ def _load_hwm_high(
 class GoalLibrary:
     """Thin wrapper around goal_library.npz."""
 
-    def __init__(self, path: str) -> None:
-        data = np.load(path, allow_pickle=True)
+    def __init__(self, path: str | None = None, *, npz_bytes: bytes | None = None) -> None:
+        if (path is None) == (npz_bytes is None):
+            raise ValueError("Provide exactly one of path or npz_bytes")
+        if npz_bytes is not None:
+            data = np.load(io.BytesIO(npz_bytes), allow_pickle=True)
+        else:
+            data = np.load(path, allow_pickle=True)
         self.goal_names: list[str] = list(data["goal_names"])
         self.goal_frames: np.ndarray = data["goal_frames"]  # (N, 64, 64, 3) uint8
         self.goal_achievement_steps: list[int] = [int(x) for x in data["goal_achievement_steps"]]
@@ -368,12 +381,16 @@ class WMBaseAgent:
         self,
         world_model: WorldModel,
         goal_library_path: Optional[str] = None,
+        *,
+        goal_library_bytes: bytes | None = None,
     ) -> None:
         self._wm = world_model
         self._rollout = _LeWMRolloutWrapper(world_model)
         self._device = world_model._device
         self._goal_lib: Optional[GoalLibrary] = None
-        if goal_library_path and Path(goal_library_path).is_file():
+        if goal_library_bytes is not None:
+            self._goal_lib = GoalLibrary(npz_bytes=goal_library_bytes)
+        elif goal_library_path and Path(goal_library_path).is_file():
             self._goal_lib = GoalLibrary(goal_library_path)
 
     def list_achievements(self) -> list[str]:
@@ -441,19 +458,31 @@ class HWMAgent:
     def __init__(
         self,
         world_model: WorldModel,
-        hwm_ckpt_path: str,
+        hwm_ckpt_path: str | None = None,
         goal_library_path: Optional[str] = None,
+        *,
+        hwm_checkpoint_bytes: bytes | None = None,
+        goal_library_bytes: bytes | None = None,
     ) -> None:
         self._wm = world_model
         self._rollout = _LeWMRolloutWrapper(world_model)
         self._device = world_model._device
 
-        self._action_enc, self._high_pred, self._macro_mean, self._macro_std = (
-            _load_hwm_high(hwm_ckpt_path, self._device)
-        )
+        if hwm_checkpoint_bytes is not None:
+            self._action_enc, self._high_pred, self._macro_mean, self._macro_std = (
+                _load_hwm_high(ckpt_bytes=hwm_checkpoint_bytes, device=self._device)
+            )
+        elif hwm_ckpt_path is not None:
+            self._action_enc, self._high_pred, self._macro_mean, self._macro_std = (
+                _load_hwm_high(ckpt_path=hwm_ckpt_path, device=self._device)
+            )
+        else:
+            raise ValueError("Provide hwm_ckpt_path or hwm_checkpoint_bytes")
 
         self._goal_lib: Optional[GoalLibrary] = None
-        if goal_library_path and Path(goal_library_path).is_file():
+        if goal_library_bytes is not None:
+            self._goal_lib = GoalLibrary(npz_bytes=goal_library_bytes)
+        elif goal_library_path and Path(goal_library_path).is_file():
             self._goal_lib = GoalLibrary(goal_library_path)
 
         # Per-session state — reset via reset_episode()
@@ -537,3 +566,18 @@ class HWMAgent:
         )
 
         return action, planning_ms, z_goal_dist
+
+    def clone_for_session(self) -> HWMAgent:
+        """New session with fresh subgoal state; reuses loaded weights (no disk / S3 reload)."""
+        o = HWMAgent.__new__(HWMAgent)
+        o._wm = self._wm
+        o._rollout = _LeWMRolloutWrapper(self._wm)
+        o._device = self._device
+        o._action_enc = self._action_enc
+        o._high_pred = self._high_pred
+        o._macro_mean = self._macro_mean
+        o._macro_std = self._macro_std
+        o._goal_lib = self._goal_lib
+        o._z_subgoal = None
+        o._steps_since_replan = 999
+        return o

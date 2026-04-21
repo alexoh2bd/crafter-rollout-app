@@ -34,7 +34,7 @@ export interface Inventory {
 export interface FrameMessage {
   step: number;
   obs: string; // base64 PNG
-  latent: number[]; // 128-d
+  latent?: number[] | null; // LeWM encoder (length = latent_dim)
   action: number;
   action_name: string;
   reward: number;
@@ -53,10 +53,17 @@ export interface FrameMessage {
   model_type: string | null;
 }
 
+export type WMCheckpointSource = "s3_bucket" | "local_disk" | "none";
+
 export interface WMGoalsResponse {
   goals: string[];
   wm_base_available: boolean;
   hwm_available: boolean;
+  /** How the backend loaded weights (CHECKPOINTS_INFERENCE_SOURCE=s3 vs disk). */
+  checkpoint_source: WMCheckpointSource;
+  /** S3 object prefix when checkpoint_source is s3_bucket. */
+  s3_prefix: string | null;
+  latent_dim: number | null;
 }
 
 export interface ImaginationRollout {

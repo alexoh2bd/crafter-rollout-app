@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SessionMode, WMGoalsResponse } from "../types";
-import { listWMGoals } from "../lib/api";
+import { API_URL, listWMGoals } from "../lib/api";
 import { useGameSession } from "../hooks/useGameSession";
 import GameCanvas from "../components/GameCanvas";
+import LatentHeatmap from "../components/LatentHeatmap";
 import SessionControls from "../components/SessionControls";
 import PlanningInfo from "../components/PlanningInfo";
 
@@ -33,6 +34,14 @@ const DEFAULT_CONFIG: AdvancedConfig = {
   n_samples: 100,
   n_iters: 3,
 };
+
+function apiHostLabel(): string {
+  try {
+    return new URL(API_URL).host;
+  } catch {
+    return API_URL;
+  }
+}
 
 function SliderRow({
   label,
@@ -104,6 +113,8 @@ export default function WorldModelDemo() {
   const goals = goalsData?.goals ?? [];
 
   const modeAvailable = wmMode === "wm_base" ? wm_base_ok : hwm_ok;
+  const ckSource = goalsData?.checkpoint_source;
+  const latentDim = goalsData?.latent_dim;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
@@ -123,6 +134,35 @@ export default function WorldModelDemo() {
           onDownload={download}
         />
       </div>
+
+      {/* Backend + weight source — matches CHECKPOINTS_INFERENCE_SOURCE=s3 on the API */}
+      {goalsData && (
+        <div className="px-6 py-2 bg-gray-900/80 border-b border-gray-800 flex flex-wrap items-center gap-3 text-xs">
+          <span className="text-gray-500">Backend</span>
+          <code className="text-gray-300 font-mono">{apiHostLabel()}</code>
+          {ckSource === "s3_bucket" && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-950/90 border border-emerald-700 px-2.5 py-1 text-emerald-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden />
+              Live inference · weights from S3
+              {goalsData.s3_prefix != null && (
+                <span className="text-emerald-400/90">
+                  (prefix <code className="text-emerald-300">{goalsData.s3_prefix}</code>)
+                </span>
+              )}
+            </span>
+          )}
+          {ckSource === "local_disk" && (
+            <span className="rounded-full border border-sky-800 bg-sky-950/60 px-2.5 py-1 text-sky-200">
+              Weights from CHECKPOINTS_DIR on the server
+            </span>
+          )}
+          {latentDim != null && (
+            <span className="text-gray-500">
+              LeWM latent dim <span className="text-gray-300 font-mono">{latentDim}</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Config panel */}
       {!isActive && (
@@ -240,37 +280,57 @@ export default function WorldModelDemo() {
       )}
 
       {/* Main layout */}
-      <div className="flex flex-1 gap-6 p-6 overflow-auto">
-        {/* Canvas */}
-        <div className="flex flex-col items-center gap-3">
-          <GameCanvas obs={frame?.obs ?? null} />
+      <div className="flex flex-1 flex-col xl:flex-row gap-6 p-6 overflow-auto">
+        <div className="flex flex-col flex-1 min-w-0 gap-4">
+          {/* Live views: env + encoder latent (same WebSocket JSON per step) */}
+          <div className="flex flex-col lg:flex-row items-start justify-center gap-6">
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-xs text-gray-500 uppercase tracking-wide">
+                Environment (Crafter)
+              </span>
+              <GameCanvas obs={frame?.obs ?? null} />
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-xs text-gray-500 uppercase tracking-wide">
+                Encoder latent (LeWM, live)
+              </span>
+              <LatentHeatmap latent={frame?.latent ?? null} size={512} />
+              <p className="text-gray-600 text-[11px] max-w-[28rem] text-center leading-snug">
+                Same WebSocket stream as the game: each step runs planning on the server, then
+                encodes the new frame. With{" "}
+                <code className="text-gray-500">CHECKPOINTS_INFERENCE_SOURCE=s3</code>, weights stay
+                in RAM after load from the bucket.
+              </p>
+            </div>
+          </div>
 
-          {phase === "idle" && (
-            <p className="text-gray-500 text-sm">
-              {modeAvailable
-                ? "Configure a goal and press Start."
-                : "This model is not available — place the checkpoint in backend/checkpoints/."}
-            </p>
-          )}
-          {phase === "playing" && (
-            <p className="text-gray-400 text-xs">
-              Planning in progress — frames stream as inference completes.
-            </p>
-          )}
-          {phase === "error" && error && (
-            <p className="text-red-400 text-sm font-medium max-w-md text-center">
-              {error}
-            </p>
-          )}
-          {phase === "done" && (
-            <p className="text-emerald-400 text-sm font-medium">
-              Episode complete — download your rollout above.
-            </p>
-          )}
+          <div className="flex flex-col items-center text-center">
+            {phase === "idle" && (
+              <p className="text-gray-500 text-sm">
+                {modeAvailable
+                  ? "Configure a goal and press Start."
+                  : "This model is not available on the API — upload checkpoints or enable S3 inference on the server."}
+              </p>
+            )}
+            {phase === "playing" && (
+              <p className="text-gray-400 text-xs max-w-xl">
+                Streaming — step {frame?.step ?? "…"} · game view and latent update after each
+                plan_step on the backend.
+              </p>
+            )}
+            {phase === "error" && error && (
+              <p className="text-red-400 text-sm font-medium max-w-md">{error}</p>
+            )}
+            {phase === "done" && (
+              <p className="text-emerald-400 text-sm font-medium">
+                Episode complete — download your rollout above.
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Planning info sidebar */}
-        <div className="w-72 shrink-0 space-y-4">
+        <div className="w-full xl:w-72 shrink-0 space-y-4">
           <PlanningInfo
             modelType={frame?.model_type ?? null}
             step={frame?.step ?? null}
@@ -278,6 +338,7 @@ export default function WorldModelDemo() {
             zGoalDist={frame?.z_goal_dist ?? null}
             achievement={achievement}
             actionName={frame?.action_name ?? null}
+            checkpointSource={goalsData?.checkpoint_source ?? null}
           />
 
           {/* Achievements unlocked */}
