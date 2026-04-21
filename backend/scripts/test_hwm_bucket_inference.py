@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cursor (AI-assisted).
 """Load LeWM + HWM weights from the S3 bucket (same as CHECKPOINTS_INFERENCE_SOURCE=s3) and run one HWM plan_step.
 
 Run from ``backend/``::

@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 interface Props {
   value: number;
   onChange: (fps: number) => void;

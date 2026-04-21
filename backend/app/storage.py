@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Rollout storage: JSONL writer and SQLite metadata store."""
 
 from __future__ import annotations

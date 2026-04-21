@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+// Cursor (AI-assisted).
 
 interface ImportMetaEnv {
   readonly VITE_API_URL: string;

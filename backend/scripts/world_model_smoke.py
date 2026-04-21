@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Smoke-test LeWM inference (encode + predictor rollouts).
 
 Run from the backend directory:

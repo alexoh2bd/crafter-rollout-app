@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FrameMessage, SessionMode } from "../types";
 import {

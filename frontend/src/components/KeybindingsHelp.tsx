@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import type { KeybindingGroup } from "../lib/keybindings";
 
 interface Props {

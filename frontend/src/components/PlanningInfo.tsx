@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import type { WMCheckpointSource } from "../types";
 
 interface Props {

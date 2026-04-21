@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """GameSession smoke tests."""
 
 from app.game_session import GameSession

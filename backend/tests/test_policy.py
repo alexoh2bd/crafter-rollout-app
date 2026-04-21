@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Policy smoke tests."""
 
 import numpy as np

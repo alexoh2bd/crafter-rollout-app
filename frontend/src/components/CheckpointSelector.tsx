@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import { useEffect, useState } from "react";
 import type { CheckpointMeta } from "../types";
 import { listCheckpoints } from "../lib/api";

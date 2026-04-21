@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Pydantic request/response schemas."""
 
 from datetime import datetime

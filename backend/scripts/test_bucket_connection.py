@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cursor (AI-assisted).
 """Smoke-test Railway bucket credentials (same resolution as the FastAPI app).
 
 Run from the ``backend`` directory::

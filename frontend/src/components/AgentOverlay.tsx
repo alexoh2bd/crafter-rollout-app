@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 interface Props {
   actionProbs: number[] | null;
   actionNames: string[];

@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 /**
  * Shared TypeScript types for the Crafter Rollout Collector frontend.
  * Expanded in subsequent PRs as schemas are defined.

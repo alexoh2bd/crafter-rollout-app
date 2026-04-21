@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """FastAPI application — routes and WebSocket handlers."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import { useEffect, useRef } from "react";
 
 interface Props {

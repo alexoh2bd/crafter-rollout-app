@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Railway S3 bucket integration for checkpoints.
 
 Primary env names (Railway bucket → service references):

@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import type { Inventory } from "../types";
 
 interface Props {

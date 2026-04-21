@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Register a new policy checkpoint in manifest.json.
 
 Usage:

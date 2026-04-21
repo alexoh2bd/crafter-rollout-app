@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+// Cursor (AI-assisted).
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 

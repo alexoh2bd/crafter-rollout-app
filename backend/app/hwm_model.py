@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Hierarchical World Model (HWM) inference for the backend.
 
 Provides:

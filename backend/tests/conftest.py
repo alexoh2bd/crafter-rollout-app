@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Shared pytest fixtures."""
 
 import pytest

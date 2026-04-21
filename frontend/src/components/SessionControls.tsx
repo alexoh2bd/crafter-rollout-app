@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import type { SessionPhase } from "../hooks/useGameSession";
 
 interface Props {

@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 /**
  * Human play mode: keyboard → Crafter action index (matches backend env order).
  * Used by Play.tsx and KeybindingsHelp.

@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """World model: imagination rollouts in latent space using LeWM.
 
 Loads lewm_base.pt (or any checkpoint saved by src/letrain.py) and

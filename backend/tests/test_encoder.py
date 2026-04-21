@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Encoder smoke tests."""
 
 import numpy as np

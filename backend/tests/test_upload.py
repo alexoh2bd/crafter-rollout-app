@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Checkpoint upload API tests."""
 
 import json

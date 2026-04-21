@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cursor (AI-assisted).
 """Sync world-model checkpoint files with Railway's S3-compatible bucket (CLI)."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """
 LeWorldModel (LeWM) - faithful implementation from the paper.
 Encoder: ViT-Tiny (CLS token -> BN projector -> z_t)

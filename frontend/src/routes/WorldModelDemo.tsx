@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SessionMode, WMGoalsResponse } from "../types";

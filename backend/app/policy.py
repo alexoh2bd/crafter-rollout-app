@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Policy inference and registry."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """GameSession: manages a single Crafter episode."""
 
 from __future__ import annotations

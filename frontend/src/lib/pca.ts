@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 /**
  * Incremental PCA helper for projecting 128-d latents to 2D for visualization.
  * Implemented in PR 11.

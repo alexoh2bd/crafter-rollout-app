@@ -1,3 +1,4 @@
+# Cursor (AI-assisted).
 """Crafter achievement tracking utilities."""
 
 ACHIEVEMENT_NAMES: list[str] = [

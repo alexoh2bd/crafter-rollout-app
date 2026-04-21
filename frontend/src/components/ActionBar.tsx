@@ -1,3 +1,5 @@
+// Cursor (AI-assisted).
+
 interface Props {
   actionName: string | null;
   step: number;
