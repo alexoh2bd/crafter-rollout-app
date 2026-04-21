@@ -1,60 +1,67 @@
 // Cursor (AI-assisted).
 
 import { useEffect, useRef, useState } from "react";
+import { ACHIEVEMENT_ORDER } from "../lib/achievements";
 
 interface Props {
-  unlocked: string[];
+  unlockedThisStep: string[];
+  /** When this becomes `connecting`, cumulative unlocks reset for a new session. */
+  sessionPhase?: "idle" | "connecting" | "playing" | "done" | "error";
 }
 
-export default function AchievementPanel({ unlocked }: Props) {
+export default function AchievementPanel({ unlockedThisStep, sessionPhase }: Props) {
   const [allUnlocked, setAllUnlocked] = useState<Set<string>>(new Set());
   const [recentlyUnlocked, setRecentlyUnlocked] = useState<Set<string>>(new Set());
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (unlocked.length === 0) return;
-
-    const newOnes = unlocked.filter((a) => !allUnlocked.has(a));
-    if (newOnes.length === 0) return;
-
-    setAllUnlocked((prev) => new Set([...prev, ...newOnes]));
-    setRecentlyUnlocked((prev) => new Set([...prev, ...newOnes]));
-
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
+    if (sessionPhase === "connecting") {
+      setAllUnlocked(new Set());
       setRecentlyUnlocked(new Set());
-    }, 2000);
-  }, [unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
+    }
+  }, [sessionPhase]);
 
-  if (allUnlocked.size === 0) {
-    return (
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-          Achievements
-        </h3>
-        <p className="text-gray-600 text-sm">None yet</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (unlockedThisStep.length === 0) return;
+
+    setAllUnlocked((prev) => {
+      const newOnes = unlockedThisStep.filter((a) => !prev.has(a));
+      if (newOnes.length === 0) return prev;
+      setRecentlyUnlocked((r) => new Set([...r, ...newOnes]));
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        setRecentlyUnlocked(new Set());
+      }, 2000);
+      return new Set([...prev, ...newOnes]);
+    });
+  }, [unlockedThisStep]);
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-        Achievements ({allUnlocked.size})
+    <div className="bg-gray-800 rounded-lg p-4 flex flex-col min-h-0 max-h-[min(70vh,32rem)]">
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 shrink-0">
+        Achievements
       </h3>
-      <ul className="space-y-1">
-        {[...allUnlocked].map((name) => {
+      <ul className="space-y-0.5 overflow-y-auto text-sm pr-1">
+        {ACHIEVEMENT_ORDER.map((name) => {
+          const got = allUnlocked.has(name);
           const isNew = recentlyUnlocked.has(name);
           return (
             <li
               key={name}
-              className={`text-sm px-2 py-1 rounded transition-colors duration-500 ${
+              className={`flex items-center gap-2 px-1.5 py-0.5 rounded font-mono text-xs ${
                 isNew
-                  ? "bg-yellow-500 text-gray-900 font-semibold"
-                  : "text-gray-300"
+                  ? "bg-yellow-500/20 text-yellow-200"
+                  : got
+                    ? "text-gray-200"
+                    : "text-gray-600"
               }`}
             >
-              {name.replace(/_/g, " ")}
+              <span className="w-4 shrink-0 text-center" aria-hidden>
+                {got ? "☑" : "☐"}
+              </span>
+              <span className={got ? "text-gray-200" : "text-gray-500"}>
+                {name.replace(/_/g, " ")}
+              </span>
             </li>
           );
         })}

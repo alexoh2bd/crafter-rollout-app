@@ -53,6 +53,10 @@ export interface FrameMessage {
   planning_ms: number | null;
   z_goal_dist: number | null;
   model_type: string | null;
+  /** HWM: cem_high ran this step */
+  hwm_replanned?: boolean | null;
+  /** HWM: L1 distance from current latent to active latent subgoal */
+  hwm_subgoal_dist?: number | null;
 }
 
 export type WMCheckpointSource = "s3_bucket" | "local_disk" | "none";

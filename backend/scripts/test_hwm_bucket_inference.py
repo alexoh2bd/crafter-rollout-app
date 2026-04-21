@@ -100,7 +100,7 @@ def main() -> int:
         h_lo, h_hi = 8, 3
 
     t2 = time.perf_counter()
-    action, planning_ms, z_dist = agent.plan_step(
+    action, planning_ms, z_dist, _repl, _sg = agent.plan_step(
         obs,
         z_goal,
         H_lo=h_lo,
@@ -118,7 +118,17 @@ def main() -> int:
     print(f"  plan_step wall time: {time.perf_counter() - t2:.2f}s")
 
     a2 = agent.clone_for_session()
-    action2, _, _ = a2.plan_step(obs, z_goal, H_lo=h_lo, H_hi=h_hi, n_samples_lo=n_lo, n_samples_hi=n_hi, n_elite_lo=n_elite, n_elite_hi=n_elite, n_iters=iters)
+    action2, _, _, _, _ = a2.plan_step(
+        obs,
+        z_goal,
+        H_lo=h_lo,
+        H_hi=h_hi,
+        n_samples_lo=n_lo,
+        n_samples_hi=n_hi,
+        n_elite_lo=n_elite,
+        n_elite_hi=n_elite,
+        n_iters=iters,
+    )
     print(f"  clone_for_session plan_step: action={action2} (fresh subgoal state)")
 
     print("OK — HWM inference from bucket bytes.")

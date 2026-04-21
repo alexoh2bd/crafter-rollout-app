@@ -12,34 +12,35 @@ interface Props {
   checkpointSource?: WMCheckpointSource | null;
 }
 
-const MODEL_LABELS: Record<string, { label: string; color: string }> = {
-  wm_base: { label: "Base WM", color: "text-indigo-400 bg-indigo-900/50 border-indigo-700" },
-  hwm:     { label: "Hierarchical WM", color: "text-violet-400 bg-violet-900/50 border-violet-700" },
+const MODEL_LABELS: Record<string, { label: string; gradient: string; dot: string }> = {
+  wm_base: {
+    label: "Base WM",
+    gradient: "from-indigo-500 to-indigo-600",
+    dot: "bg-indigo-400",
+  },
+  hwm: {
+    label: "Hierarchical WM",
+    gradient: "from-violet-500 to-purple-600",
+    dot: "bg-violet-400",
+  },
 };
 
-function StatRow({ label, value }: { label: string; value: string }) {
+const SOURCE_CFG: Record<string, { label: string; cls: string }> = {
+  s3_bucket: { label: "S3",   cls: "text-emerald-400 bg-emerald-950/80 border-emerald-700/60" },
+  local_disk: { label: "Disk", cls: "text-sky-400 bg-sky-950/50 border-sky-700/60" },
+  none:       { label: "No WM", cls: "text-gray-500 bg-gray-900 border-gray-700/60" },
+};
+
+function StatRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-4 text-sm">
-      <span className="text-gray-400 shrink-0">{label}</span>
-      <span className="text-white font-mono">{value}</span>
+    <div className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-700/40 last:border-0">
+      <span className="text-gray-500 text-xs">{label}</span>
+      <span className={`text-xs font-mono ${accent ? "text-violet-300 font-semibold" : "text-gray-200"}`}>
+        {value}
+      </span>
     </div>
   );
 }
-
-const SOURCE_LABELS: Record<string, { label: string; className: string }> = {
-  s3_bucket: {
-    label: "S3 bucket",
-    className: "text-emerald-300 bg-emerald-950/80 border-emerald-700",
-  },
-  local_disk: {
-    label: "Local disk",
-    className: "text-sky-300 bg-sky-950/50 border-sky-700",
-  },
-  none: {
-    label: "No WM",
-    className: "text-gray-500 bg-gray-900 border-gray-700",
-  },
-};
 
 export default function PlanningInfo({
   modelType,
@@ -51,73 +52,82 @@ export default function PlanningInfo({
   checkpointSource,
 }: Props) {
   const meta = modelType ? MODEL_LABELS[modelType] : null;
-  const src =
-    checkpointSource && SOURCE_LABELS[checkpointSource]
-      ? SOURCE_LABELS[checkpointSource]
-      : null;
+  const src  = checkpointSource ? (SOURCE_CFG[checkpointSource] ?? null) : null;
+
+  const proximity = zGoalDist != null
+    ? Math.max(0, Math.min(100, 100 - zGoalDist))
+    : null;
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 space-y-4">
-      {/* Model badge */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Planning Info
-        </h3>
-        {src && (
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded border ${src.className}`}
-            title="Where the backend loaded LeWM / HWM weights"
-          >
-            {src.label}
-          </span>
-        )}
-        {meta && (
-          <span
-            className={`text-xs font-semibold px-2 py-0.5 rounded border ${meta.color}`}
-          >
-            {meta.label}
-          </span>
+    <div
+      className="rounded-xl border border-gray-700/50 overflow-hidden"
+      style={{
+        background: "linear-gradient(145deg, rgba(17,17,27,0.9) 0%, rgba(24,24,37,0.9) 100%)",
+        backdropFilter: "blur(12px)",
+      }}
+    >
+      {/* Header strip */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-700/40">
+        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
+          Planning
+        </span>
+        <div className="flex items-center gap-1.5">
+          {src && (
+            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${src.cls}`}>
+              {src.label}
+            </span>
+          )}
+          {meta && (
+            <span
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full text-white bg-gradient-to-r ${meta.gradient}`}
+            >
+              {meta.label}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="px-4 py-3 space-y-0.5">
+        {step === null ? (
+          <div className="flex flex-col items-center gap-2 py-4">
+            <div className="w-6 h-6 rounded-full border-2 border-gray-700 border-t-violet-500 animate-spin" />
+            <p className="text-gray-600 text-xs">Waiting for first frame…</p>
+          </div>
+        ) : (
+          <>
+            {achievement && (
+              <StatRow label="Goal" value={achievement.replace(/_/g, " ")} accent />
+            )}
+            <StatRow label="Step" value={step.toString()} />
+            <StatRow
+              label="Latent dist"
+              value={zGoalDist != null ? zGoalDist.toFixed(1) : "—"}
+            />
+            <StatRow
+              label="Plan time"
+              value={planningMs != null ? `${planningMs.toFixed(0)} ms` : "—"}
+            />
+            {actionName && (
+              <StatRow label="Last action" value={actionName.replace(/_/g, " ")} />
+            )}
+          </>
         )}
       </div>
 
-      {step === null ? (
-        <p className="text-gray-600 text-sm">Waiting for first frame…</p>
-      ) : (
-        <div className="space-y-2">
-          {achievement && (
-            <StatRow
-              label="Goal"
-              value={achievement.replace(/_/g, " ")}
-            />
-          )}
-          <StatRow label="Step" value={step?.toString() ?? "—"} />
-          <StatRow
-            label="Latent dist"
-            value={zGoalDist != null ? zGoalDist.toFixed(1) : "—"}
-          />
-          <StatRow
-            label="Plan time"
-            value={planningMs != null ? `${planningMs.toFixed(0)} ms` : "—"}
-          />
-          {actionName && (
-            <StatRow label="Last action" value={actionName.replace(/_/g, " ")} />
-          )}
-        </div>
-      )}
-
-      {/* Latent distance progress bar */}
-      {zGoalDist != null && (
-        <div>
-          <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>Far from goal</span>
-            <span>Close</span>
+      {/* Goal proximity bar */}
+      {proximity != null && (
+        <div className="px-4 pb-4 pt-1">
+          <div className="flex justify-between text-[10px] text-gray-600 mb-1.5">
+            <span>Goal proximity</span>
+            <span className="text-gray-400 font-mono">{proximity.toFixed(0)}%</span>
           </div>
-          <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+          <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
             <div
-              className="h-2 rounded-full bg-violet-500 transition-all duration-200"
+              className="h-1.5 rounded-full transition-all duration-300"
               style={{
-                // Clamp dist to [0, 100] and invert so full bar = close to goal
-                width: `${Math.max(0, 100 - Math.min(100, zGoalDist))}%`,
+                width: `${proximity}%`,
+                background: `linear-gradient(90deg, #7c3aed, #a78bfa)`,
+                boxShadow: proximity > 60 ? "0 0 8px rgba(167,139,250,0.6)" : undefined,
               }}
             />
           </div>

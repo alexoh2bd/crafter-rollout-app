@@ -66,6 +66,9 @@ class FrameMessage(BaseModel):
     planning_ms: float | None = None
     z_goal_dist: float | None = None
     model_type: str | None = None
+    # HWM only: macro replan and distance to current latent subgoal
+    hwm_replanned: bool | None = None
+    hwm_subgoal_dist: float | None = None
 
 
 class ImaginationRollout(BaseModel):

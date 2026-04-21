@@ -3,3 +3,101 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: #09090b;
+    color: #f4f4f5;
+  }
+
+  /* Slim dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #18181b;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #52525b;
+  }
+
+  /* Range inputs */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 9999px;
+    background: #3f3f46;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #7c3aed;
+    cursor: pointer;
+    border: 2px solid #0e0e14;
+    box-shadow: 0 0 6px rgba(124, 58, 237, 0.5);
+    transition: box-shadow 0.15s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 10px rgba(124, 58, 237, 0.8);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #7c3aed;
+    cursor: pointer;
+    border: 2px solid #0e0e14;
+  }
+
+  /* Select element */
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 2.5rem !important;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(90deg, #c4b5fd 0%, #818cf8 50%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glass {
+    background: linear-gradient(145deg, rgba(17,17,27,0.85) 0%, rgba(24,24,37,0.85) 100%);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(63,63,70,0.5);
+    border-radius: 0.75rem;
+  }
+
+  .glow-violet {
+    box-shadow: 0 0 20px rgba(124, 58, 237, 0.35);
+  }
+  .glow-indigo {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+  }
+}

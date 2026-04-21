@@ -602,21 +602,25 @@ async def _hwm_loop(
     try:
         while True:
             obs = session.obs
-            action, planning_ms, z_goal_dist = await loop.run_in_executor(
-                _wm_executor,
-                lambda: hwm_agent.plan_step(
-                    obs, z_goal,
-                    H_lo=H_lo, H_hi=H_hi,
-                    n_samples_lo=n_samples, n_samples_hi=n_samples,
-                    n_elite_lo=n_elite, n_elite_hi=n_elite,
-                    n_iters=n_iters,
-                ),
+            action, planning_ms, z_goal_dist, hwm_replanned, hwm_subgoal_dist = (
+                await loop.run_in_executor(
+                    _wm_executor,
+                    lambda: hwm_agent.plan_step(
+                        obs, z_goal,
+                        H_lo=H_lo, H_hi=H_hi,
+                        n_samples_lo=n_samples, n_samples_hi=n_samples,
+                        n_elite_lo=n_elite, n_elite_hi=n_elite,
+                        n_iters=n_iters,
+                    ),
+                )
             )
             frame = session.step_human(action, source="agent")
             row = frame.model_dump(mode="json")
             row["planning_ms"] = planning_ms
             row["z_goal_dist"] = z_goal_dist
             row["model_type"] = "hwm"
+            row["hwm_replanned"] = hwm_replanned
+            row["hwm_subgoal_dist"] = hwm_subgoal_dist
             writer.write(row)
             await ws.send_text(json.dumps(row))
             await asyncio.sleep(0)
