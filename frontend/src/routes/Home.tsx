@@ -30,38 +30,51 @@ export default function Home() {
             Crafter Rollout Collector
           </h1>
           <p className="mt-2 text-gray-500 text-sm max-w-xl mx-auto leading-relaxed">
-            Research hub: compare world-model modes, run live inference from your API, or collect
-            human baselines. Pre-recorded side-by-side rollouts ship when assets are added under{" "}
-            <code className="text-gray-600">public/recordings/</code>.
+            Research hub: compare world-model modes (recorded rollouts below), run live inference from
+            your API, or collect human baselines.
           </p>
         </div>
 
-        {/* Compare — headline (placeholder until bundled recordings) */}
+        {/* Compare — flat CEM vs HWM (bundled GIFs) */}
         <section className="w-full space-y-3">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest text-center">
             1 · Compare Base WM vs HWM
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div
-              className="rounded-xl border border-dashed border-gray-700 min-h-[180px] flex flex-col items-center justify-center p-6 bg-gray-950/50 text-center"
-              aria-hidden
-            >
-              <span className="text-[10px] text-gray-600 uppercase tracking-wide mb-2">Base WM</span>
-              <p className="text-gray-500 text-sm">
-                Recorded rollout slot — flat CEM / LeWM (same seed + goal as HWM).
+            <figure className="rounded-xl border border-gray-700/80 bg-black/40 overflow-hidden flex flex-col">
+              <figcaption className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-3 py-2 border-b border-gray-800">
+                Base WM · flat CEM
+              </figcaption>
+              <div className="flex items-center justify-center p-2 bg-[#0c0c0e]">
+                <img
+                  src="/recordings/flat1.gif"
+                  alt="Recorded Crafter rollout: Base world model, flat CEM planning"
+                  className="w-full max-h-[min(50vh,420px)] object-contain rounded-md [image-rendering:pixelated]"
+                  loading="eager"
+                  decoding="async"
+                />
+              </div>
+              <p className="text-gray-600 text-[11px] px-3 py-2 leading-snug">
+                Same seed and goal as HWM — LeWM rollout only, no macro subgoals.
               </p>
-            </div>
-            <div
-              className="rounded-xl border border-dashed border-violet-800/50 min-h-[180px] flex flex-col items-center justify-center p-6 bg-gray-950/50 text-center"
-              aria-hidden
-            >
-              <span className="text-[10px] text-gray-600 uppercase tracking-wide mb-2">
+            </figure>
+            <figure className="rounded-xl border border-violet-800/50 bg-black/40 overflow-hidden flex flex-col">
+              <figcaption className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-3 py-2 border-b border-violet-900/40">
                 Hierarchical WM
-              </span>
-              <p className="text-gray-500 text-sm">
-                Recorded rollout slot — two-level CEM with macro subgoals.
+              </figcaption>
+              <div className="flex items-center justify-center p-2 bg-[#0c0c0e]">
+                <img
+                  src="/recordings/hwm1.gif"
+                  alt="Recorded Crafter rollout: hierarchical world model with macro planning"
+                  className="w-full max-h-[min(50vh,420px)] object-contain rounded-md [image-rendering:pixelated]"
+                  loading="eager"
+                  decoding="async"
+                />
+              </div>
+              <p className="text-gray-600 text-[11px] px-3 py-2 leading-snug">
+                Two-level CEM — high-level latent subgoals plus low-level LeWM rollout.
               </p>
-            </div>
+            </figure>
           </div>
         </section>
 
