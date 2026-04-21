@@ -515,12 +515,14 @@ class HWMAgent:
         n_elite_hi: int = 10,
         n_iters: int = 3,
         subgoal_threshold: float = 2.0,
-    ) -> tuple[int, float, float]:
+    ) -> tuple[int, float, float, bool, float | None]:
         """Two-level CEM step.
 
         Returns:
-            (action, planning_ms, z_goal_dist) where z_goal_dist is the L1
-            distance from the current latent to the *final* goal (not subgoal).
+            (action, planning_ms, z_goal_dist, hwm_replanned, hwm_subgoal_dist)
+            where z_goal_dist is L1 from current latent to the *final* goal;
+            hwm_replanned is True when cem_high ran this step;
+            hwm_subgoal_dist is L1 from current latent to the active latent subgoal (or None).
         """
         t0 = time.perf_counter()
 
@@ -534,6 +536,7 @@ class HWMAgent:
             dist = F.l1_loss(z_curr, self._z_subgoal, reduction="none").sum().item()
             need_replan = dist < subgoal_threshold
 
+        hwm_replanned = False
         if need_replan:
             _, self._z_subgoal = cem_high(
                 self._high_pred,
@@ -548,6 +551,7 @@ class HWMAgent:
                 macro_action_std=self._macro_std,
             )
             self._steps_since_replan = 0
+            hwm_replanned = True
 
         action = cem_low(
             self._rollout,
@@ -566,7 +570,13 @@ class HWMAgent:
             F.l1_loss(z_curr, z_goal_t, reduction="none").sum().item()
         )
 
-        return action, planning_ms, z_goal_dist
+        hwm_subgoal_dist: float | None = None
+        if self._z_subgoal is not None:
+            hwm_subgoal_dist = float(
+                F.l1_loss(z_curr, self._z_subgoal, reduction="none").sum().item()
+            )
+
+        return action, planning_ms, z_goal_dist, hwm_replanned, hwm_subgoal_dist
 
     def clone_for_session(self) -> HWMAgent:
         """New session with fresh subgoal state; reuses loaded weights (no disk / S3 reload)."""

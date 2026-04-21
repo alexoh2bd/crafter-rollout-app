@@ -6,27 +6,39 @@ import type { SessionMode, WMGoalsResponse } from "../types";
 import { API_URL, isProductionBuildPointingAtLocalhost, listWMGoals } from "../lib/api";
 import { useGameSession } from "../hooks/useGameSession";
 import GameCanvas from "../components/GameCanvas";
+import FrameStatusOverlay from "../components/FrameStatusOverlay";
 import LatentHeatmap from "../components/LatentHeatmap";
 import SessionControls from "../components/SessionControls";
 import PlanningInfo from "../components/PlanningInfo";
+import EpisodeTimeline, { type AchievementEvent } from "../components/EpisodeTimeline";
+import HwmSubgoalBanner from "../components/HwmSubgoalBanner";
 
 type WMMode = "wm_base" | "hwm" | "random_policy";
 
-const MODE_META: Record<WMMode, { label: string; description: string; icon: string }> = {
+const MODE_META: Record<
+  WMMode,
+  { label: string; description: string; icon: string; contextLine: string }
+> = {
   wm_base: {
     label: "Base WM",
     description: "Flat CEM planning using the base LeWM predictor.",
     icon: "🧠",
+    contextLine:
+      "Compare against HWM: flat CEM rolls primitive sequences with the LeWM rollout model only — no macro subgoals.",
   },
   hwm: {
     label: "Hierarchical WM",
     description: "Two-level CEM: ActionEncoder + HighLevelPredictor.",
     icon: "🏗️",
+    contextLine:
+      "High-level planner proposes latent subgoals via cem_high (macro rollouts); low-level CEM reaches each subgoal. Session goal is encoded from the achievement you pick — subgoals are latent targets, not separate named achievements.",
   },
   random_policy: {
     label: "Random",
     description: "Uniform random actions — no neural network.",
     icon: "🎲",
+    contextLine:
+      "Uniform random baseline for rollout collection — use to compare against learned planners.",
   },
 };
 
@@ -86,7 +98,6 @@ function SliderRow({
   );
 }
 
-/** Small section label */
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
@@ -95,7 +106,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Glass-style panel */
 function Panel({
   className = "",
   children,
@@ -116,15 +126,40 @@ function Panel({
   );
 }
 
+function IdlePlaceholder({
+  label,
+  isConnecting,
+}: {
+  label: string;
+  isConnecting: boolean;
+}) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-700/80 bg-[repeating-linear-gradient(315deg,_#27272a_0,_#27272a_6px,_#18181b_6px,_#18181b_12px)] text-center p-6 min-h-[240px] w-full max-w-[384px]"
+      aria-hidden={isConnecting}
+    >
+      <SectionLabel>{label}</SectionLabel>
+      <p className="mt-3 text-xs text-gray-500">
+        {isConnecting ? "Connecting to backend…" : "Press Start for live stream."}
+      </p>
+    </div>
+  );
+}
+
 export default function WorldModelDemo() {
   const navigate = useNavigate();
   const [wmMode, setWmMode] = useState<WMMode>("wm_base");
   const [achievement, setAchievement] = useState<string>("");
   const [config, setConfig] = useState<AdvancedConfig>(DEFAULT_CONFIG);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [configExpanded, setConfigExpanded] = useState(false);
   const [goalsData, setGoalsData] = useState<WMGoalsResponse | null>(null);
   const [goalsError, setGoalsError] = useState<string | null>(null);
   const [goalsLoading, setGoalsLoading] = useState(true);
+
+  const [achievementEvents, setAchievementEvents] = useState<AchievementEvent[]>([]);
+  const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set());
+  const [timelineCap, setTimelineCap] = useState(512);
 
   const sessionMode: SessionMode =
     wmMode === "random_policy" ? "agent" : wmMode;
@@ -145,6 +180,34 @@ export default function WorldModelDemo() {
       .finally(() => setGoalsLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (phase === "connecting") {
+      setAchievementEvents([]);
+      setUnlockedAchievements(new Set());
+      setTimelineCap(512);
+    }
+  }, [phase]);
+
+  useEffect(() => {
+    if (!frame?.achievements_unlocked_this_step?.length) return;
+    const names = frame.achievements_unlocked_this_step;
+    setUnlockedAchievements((prev) => {
+      const n = new Set(prev);
+      for (const a of names) n.add(a);
+      return n;
+    });
+    setAchievementEvents((prev) => [
+      ...prev,
+      { step: frame.step, names: [...names] },
+    ]);
+  }, [frame]);
+
+  useEffect(() => {
+    if (frame) {
+      setTimelineCap((c) => Math.max(c, frame.step, 64));
+    }
+  }, [frame]);
+
   const handleStart = () => {
     if (wmMode === "random_policy") {
       start({ checkpointId: "random", fps: config.fps });
@@ -152,6 +215,28 @@ export default function WorldModelDemo() {
     }
     start({
       wmAchievement: achievement || undefined,
+      wmHLo: config.H_lo,
+      wmHHi: config.H_hi,
+      wmNSamples: config.n_samples,
+      wmNIters: config.n_iters,
+    });
+  };
+
+  const defaultGoalForStart = (): string => {
+    const goals = goalsData?.goals ?? [];
+    const pick = goals.find((g) => g === "collect_wood") ?? goals[0] ?? "";
+    return pick;
+  };
+
+  const handleStartWithDefaults = () => {
+    if (wmMode === "random_policy") {
+      start({ checkpointId: "random", fps: config.fps });
+      return;
+    }
+    const g = defaultGoalForStart();
+    setAchievement(g);
+    start({
+      wmAchievement: g || undefined,
       wmHLo: config.H_lo,
       wmHHi: config.H_hi,
       wmNSamples: config.n_samples,
@@ -182,12 +267,15 @@ export default function WorldModelDemo() {
   const ckSource = goalsData?.checkpoint_source;
   const latentDim = goalsData?.latent_dim;
 
+  const showTimeline = phase === "playing" || phase === "done";
+  const achievementTotal = unlockedAchievements.size;
+  const currentStep = frame?.step ?? 0;
+
   return (
     <div
       className="min-h-screen text-white flex flex-col"
       style={{ background: "#09090b" }}
     >
-      {/* ── Top bar ─────────────────────────────────────────────────── */}
       <header className="flex items-center justify-between px-5 py-3 border-b border-gray-800/80 bg-[#0e0e14]/90 backdrop-blur-sm sticky top-0 z-20">
         <button
           onClick={() => navigate("/")}
@@ -233,7 +321,6 @@ export default function WorldModelDemo() {
         />
       </header>
 
-      {/* ── Production API misconfiguration banner ──────────────────── */}
       {prodLocalApi && (
         <div className="px-5 py-2.5 bg-amber-950/80 border-b border-amber-800/60 text-amber-200/90 text-xs leading-relaxed">
           <strong className="font-semibold text-amber-100">API URL misconfigured.</strong>{" "}
@@ -243,20 +330,14 @@ export default function WorldModelDemo() {
         </div>
       )}
 
-      {/* ── Body ────────────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col xl:flex-row gap-5 p-5 overflow-auto">
-
-        {/* ── Left column ─────────────────────────────── */}
         <div className="flex flex-col flex-1 min-w-0 gap-5">
-
-          {/* Config panel (hidden while active) */}
           {!isActive && (
             <Panel className="overflow-hidden">
-              {/* Mode tabs */}
               <div className="flex border-b border-gray-700/40">
                 {(["wm_base", "hwm", "random_policy"] as const).map((m) => {
                   const available = isTabAvailable(m);
-                  const active    = wmMode === m;
+                  const active = wmMode === m;
                   const showUnavail =
                     !goalsLoading && !available && !prodLocalApi && !goalsError && m !== "random_policy";
                   return (
@@ -293,7 +374,10 @@ export default function WorldModelDemo() {
               </div>
 
               <div className="p-4 space-y-4">
-                {/* Error / status messages */}
+                <p className="text-xs text-gray-400 leading-relaxed border-l-2 border-violet-600/50 pl-3">
+                  {MODE_META[wmMode].contextLine}
+                </p>
+
                 {goalsError && (
                   <div className="flex items-start gap-2 text-yellow-400 text-xs bg-yellow-950/40 border border-yellow-800/50 rounded-lg px-3 py-2">
                     <span aria-hidden>⚠</span>
@@ -321,176 +405,226 @@ export default function WorldModelDemo() {
                           <span className="text-amber-100/95">From S3:</span>{" "}
                           <code className="text-amber-50">CHECKPOINTS_INFERENCE_SOURCE=s3</code> + bucket
                           creds (<code className="text-amber-50">AWS_S3_BUCKET_NAME</code>,{" "}
-                          <code className="text-amber-50">AWS_ENDPOINT_URL</code>,{" "}
-                          <code className="text-amber-50">AWS_ACCESS_KEY_ID</code>,{" "}
-                          <code className="text-amber-50">AWS_SECRET_ACCESS_KEY</code>).
+                          <code className="text-amber-50">AWS_ENDPOINT_URL</code>, etc.).
                         </li>
                         <li>
                           <span className="text-amber-100/95">From disk:</span>{" "}
-                          <code className="text-amber-50">CHECKPOINTS_DIR</code> → place{" "}
-                          <code className="text-amber-50">lewm_base.pt</code> there → restart.
+                          <code className="text-amber-50">CHECKPOINTS_DIR</code> →{" "}
+                          <code className="text-amber-50">lewm_base.pt</code> → restart.
                         </li>
                       </ul>
                     </div>
                   )}
 
-                {/* Mode description */}
                 <p className="text-xs text-gray-600">{MODE_META[wmMode].description}</p>
 
-                {wmMode === "random_policy" ? (
-                  <div className="max-w-sm">
-                    <SectionLabel>Speed</SectionLabel>
-                    <div className="mt-2">
-                      <SliderRow
-                        label="FPS"
-                        value={config.fps}
-                        min={1}
-                        max={30}
-                        step={1}
-                        onChange={(v) => setConfig((c) => ({ ...c, fps: v }))}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-end gap-5">
-                      {/* Goal selector */}
-                      <div className="flex flex-col gap-1.5">
-                        <SectionLabel>Goal achievement</SectionLabel>
-                        {goals.length > 0 ? (
-                          <select
-                            value={achievement}
-                            onChange={(e) => setAchievement(e.target.value)}
-                            className="bg-gray-800/80 border border-gray-700 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500 transition-colors"
-                          >
-                            <option value="">— random exploration —</option>
-                            {goals.map((g) => (
-                              <option key={g} value={g}>
-                                {g.replace(/_/g, " ")}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="e.g. collect_wood"
-                            value={achievement}
-                            onChange={(e) => setAchievement(e.target.value)}
-                            className="bg-gray-800/80 border border-gray-700 text-white rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:border-violet-500 transition-colors"
-                          />
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => setShowAdvanced((v) => !v)}
-                        className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-2 pb-1.5 transition-colors"
-                      >
-                        {showAdvanced ? "Hide" : "Show"} advanced
-                      </button>
-                    </div>
-
-                    {showAdvanced && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg bg-gray-800/40 rounded-lg p-3 border border-gray-700/40">
-                        <SectionLabel>CEM config</SectionLabel>
-                        <div className="col-span-full space-y-2">
-                          <SliderRow
-                            label="H_lo (horizon)"
-                            value={config.H_lo}
-                            min={3}
-                            max={20}
-                            step={1}
-                            onChange={(v) => setConfig((c) => ({ ...c, H_lo: v }))}
-                          />
-                          {wmMode === "hwm" && (
-                            <SliderRow
-                              label="H_hi (macro)"
-                              value={config.H_hi}
-                              min={1}
-                              max={6}
-                              step={1}
-                              onChange={(v) => setConfig((c) => ({ ...c, H_hi: v }))}
-                            />
-                          )}
-                          <SliderRow
-                            label="Samples"
-                            value={config.n_samples}
-                            min={20}
-                            max={500}
-                            step={10}
-                            onChange={(v) => setConfig((c) => ({ ...c, n_samples: v }))}
-                          />
-                          <SliderRow
-                            label="CEM iters"
-                            value={config.n_iters}
-                            min={1}
-                            max={8}
-                            step={1}
-                            onChange={(v) => setConfig((c) => ({ ...c, n_iters: v }))}
-                          />
-                        </div>
-                      </div>
-                    )}
+                {!configExpanded && wmMode !== "random_policy" && (
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <button
+                      type="button"
+                      onClick={handleStartWithDefaults}
+                      disabled={!modeAvailable || goalsLoading}
+                      className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+                    >
+                      Start with defaults
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfigExpanded(true)}
+                      className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 hover:bg-gray-800 text-sm transition-colors"
+                    >
+                      Configure session
+                    </button>
+                    <span className="text-[10px] text-gray-600">
+                      Goal defaults to{" "}
+                      <code className="text-gray-500">{defaultGoalForStart() || "exploration"}</code>
+                    </span>
                   </div>
                 )}
 
-                {/* Idle hint */}
+                {(configExpanded || wmMode === "random_policy") && (
+                  <>
+                    {wmMode === "random_policy" ? (
+                      <div className="max-w-sm">
+                        <SectionLabel>Speed</SectionLabel>
+                        <div className="mt-2">
+                          <SliderRow
+                            label="FPS"
+                            value={config.fps}
+                            min={1}
+                            max={30}
+                            step={1}
+                            onChange={(v) => setConfig((c) => ({ ...c, fps: v }))}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap items-end gap-5">
+                          <div className="flex flex-col gap-1.5">
+                            <SectionLabel>Goal achievement</SectionLabel>
+                            {goals.length > 0 ? (
+                              <select
+                                value={achievement}
+                                onChange={(e) => setAchievement(e.target.value)}
+                                className="bg-gray-800/80 border border-gray-700 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500 transition-colors"
+                              >
+                                <option value="">— random exploration —</option>
+                                {goals.map((g) => (
+                                  <option key={g} value={g}>
+                                    {g.replace(/_/g, " ")}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                placeholder="e.g. collect_wood"
+                                value={achievement}
+                                onChange={(e) => setAchievement(e.target.value)}
+                                className="bg-gray-800/80 border border-gray-700 text-white rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:border-violet-500 transition-colors"
+                              />
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => setShowAdvanced((v) => !v)}
+                            className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-2 pb-1.5 transition-colors"
+                          >
+                            {showAdvanced ? "Hide" : "Show"} advanced
+                          </button>
+                          {configExpanded && (
+                            <button
+                              type="button"
+                              onClick={() => setConfigExpanded(false)}
+                              className="text-xs text-gray-600 hover:text-gray-400 pb-1.5"
+                            >
+                              Collapse
+                            </button>
+                          )}
+                        </div>
+
+                        {showAdvanced && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg bg-gray-800/40 rounded-lg p-3 border border-gray-700/40">
+                            <div className="col-span-full">
+                              <SectionLabel>CEM config</SectionLabel>
+                            </div>
+                            <div className="col-span-full space-y-2">
+                              <SliderRow
+                                label="H_lo (horizon)"
+                                value={config.H_lo}
+                                min={3}
+                                max={20}
+                                step={1}
+                                onChange={(v) => setConfig((c) => ({ ...c, H_lo: v }))}
+                              />
+                              {wmMode === "hwm" && (
+                                <SliderRow
+                                  label="H_hi (macro)"
+                                  value={config.H_hi}
+                                  min={1}
+                                  max={6}
+                                  step={1}
+                                  onChange={(v) => setConfig((c) => ({ ...c, H_hi: v }))}
+                                />
+                              )}
+                              <SliderRow
+                                label="Samples"
+                                value={config.n_samples}
+                                min={20}
+                                max={500}
+                                step={10}
+                                onChange={(v) => setConfig((c) => ({ ...c, n_samples: v }))}
+                              />
+                              <SliderRow
+                                label="CEM iters"
+                                value={config.n_iters}
+                                min={1}
+                                max={8}
+                                step={1}
+                                onChange={(v) => setConfig((c) => ({ ...c, n_iters: v }))}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
                 {phase === "idle" && (
                   <p className="text-xs text-gray-600">
                     {!modeAvailable
                       ? "This model is not available — upload checkpoints or enable S3 inference."
                       : wmMode === "random_policy"
-                        ? "Adjust FPS then press Start."
-                        : "Configure a goal then press Start."}
+                        ? "Set FPS, then press Start in the header (or expand to adjust)."
+                        : configExpanded
+                          ? "Choose a goal and press Start in the header."
+                          : "Use Start with defaults, open Configure session, or press Start in the header."}
                   </p>
                 )}
               </div>
             </Panel>
           )}
 
-          {/* ── Live views ─────────────────── */}
           <div className="flex flex-col lg:flex-row gap-5 items-start justify-center">
-            {/* Game view */}
             <Panel className="flex flex-col items-center gap-3 p-4 flex-1 min-w-0">
               <SectionLabel>Environment · Crafter</SectionLabel>
-              <GameCanvas obs={frame?.obs ?? null} />
-
-              {/* Reward / health strip */}
-              {frame && (
-                <div className="flex items-center gap-4 text-xs font-mono">
-                  <span className="text-gray-500">
-                    Reward <span className="text-gray-200 ml-1">{frame.reward.toFixed(2)}</span>
-                  </span>
-                  <span className="text-gray-700">·</span>
-                  <span className="text-gray-500">
-                    ❤️ <span className="text-gray-200 ml-0.5">{frame.inventory.health}</span>
-                  </span>
-                  <span className="text-gray-700">·</span>
-                  <span className="text-gray-500">
-                    Step <span className="text-gray-200 ml-1">{frame.step}</span>
-                  </span>
-                </div>
+              {wmMode === "hwm" &&
+                frame?.model_type === "hwm" &&
+                (phase === "playing" || phase === "done") && (
+                  <HwmSubgoalBanner
+                    goalLabel={achievement}
+                    subgoalDist={frame.hwm_subgoal_dist}
+                    replanned={frame.hwm_replanned ?? false}
+                    step={frame.step}
+                  />
+                )}
+              {frame?.obs ? (
+                <GameCanvas obs={frame.obs} size={384}>
+                  <FrameStatusOverlay
+                    step={frame.step}
+                    reward={frame.reward}
+                    achievementTotal={achievementTotal}
+                    health={frame.inventory.health}
+                    show={phase === "playing" || phase === "done"}
+                  />
+                </GameCanvas>
+              ) : (
+                <IdlePlaceholder
+                  label="Live frame"
+                  isConnecting={phase === "connecting"}
+                />
               )}
             </Panel>
 
-            {/* Latent heatmap */}
             <Panel className="flex flex-col items-center gap-3 p-4 flex-1 min-w-0">
               <SectionLabel>Encoder latent · LeWM</SectionLabel>
-              <LatentHeatmap latent={frame?.latent ?? null} size={512} />
-              <p className="text-gray-700 text-[10px] max-w-[28rem] text-center leading-snug">
-                {wmMode === "random_policy" ? (
-                  <>LeWM encoder runs only in Base WM / HWM modes.</>
-                ) : (
-                  <>
-                    Per-step latent from the encoder.{" "}
-                    With <code className="text-gray-600">CHECKPOINTS_INFERENCE_SOURCE=s3</code>, weights
-                    stay in RAM after the first bucket load.
-                  </>
-                )}
-              </p>
+              {!isActive || phase === "connecting" ? (
+                <IdlePlaceholder
+                  label="Encoder output"
+                  isConnecting={phase === "connecting"}
+                />
+              ) : (
+                <LatentHeatmap
+                  latent={frame?.latent ?? null}
+                  size={384}
+                  latentDim={latentDim}
+                  randomPolicyMode={wmMode === "random_policy"}
+                />
+              )}
             </Panel>
           </div>
 
-          {/* ── Status strip ───────────────── */}
+          {showTimeline && (
+            <EpisodeTimeline
+              currentStep={currentStep}
+              maxStep={timelineCap}
+              events={achievementEvents}
+              visible
+            />
+          )}
+
           <div className="flex justify-center">
             {phase === "connecting" && (
               <div className="flex items-center gap-2 text-yellow-400 text-sm">
@@ -528,7 +662,6 @@ export default function WorldModelDemo() {
           </div>
         </div>
 
-        {/* ── Right sidebar ───────────────────────────────────────────── */}
         <div className="w-full xl:w-72 shrink-0 space-y-4">
           <PlanningInfo
             modelType={frame?.model_type ?? null}
@@ -540,11 +673,10 @@ export default function WorldModelDemo() {
             checkpointSource={goalsData?.checkpoint_source ?? null}
           />
 
-          {/* Achievements */}
           {frame && frame.achievements_unlocked_this_step.length > 0 && (
             <Panel className="overflow-hidden">
               <div className="px-4 py-2.5 border-b border-gray-700/40">
-                <SectionLabel>Achievements</SectionLabel>
+                <SectionLabel>This step</SectionLabel>
               </div>
               <ul className="divide-y divide-gray-700/30">
                 {frame.achievements_unlocked_this_step.map((a) => (

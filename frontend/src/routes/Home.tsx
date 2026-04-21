@@ -6,8 +6,7 @@ export default function Home() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-[#09090b] flex flex-col items-center justify-center px-4 overflow-hidden relative">
-      {/* Ambient glow blobs */}
+    <div className="min-h-screen bg-[#09090b] flex flex-col items-center px-4 py-12 overflow-hidden relative">
       <div
         aria-hidden
         className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[400px] rounded-full"
@@ -17,89 +16,103 @@ export default function Home() {
           filter: "blur(60px)",
         }}
       />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 left-1/4 w-[400px] h-[300px] rounded-full"
-        style={{
-          background:
-            "radial-gradient(ellipse at center, rgba(99,102,241,0.12) 0%, transparent 70%)",
-          filter: "blur(80px)",
-        }}
-      />
 
-      {/* Content */}
-      <div className="relative z-10 flex flex-col items-center gap-14 text-center">
-        {/* Logo mark */}
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl shadow-xl"
+      <div className="relative z-10 flex flex-col items-center gap-10 w-full max-w-4xl">
+        <div className="text-center">
+          <h1
+            className="text-4xl font-extrabold tracking-tight"
             style={{
-              background:
-                "linear-gradient(135deg, #6d28d9 0%, #4f46e5 100%)",
-              boxShadow: "0 0 40px rgba(109,40,217,0.5)",
+              background: "linear-gradient(90deg, #c4b5fd 0%, #818cf8 50%, #38bdf8 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
             }}
           >
-            🌍
-          </div>
-          <div>
-            <h1
-              className="text-5xl font-extrabold tracking-tight"
-              style={{
-                background: "linear-gradient(90deg, #c4b5fd 0%, #818cf8 50%, #38bdf8 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
+            Crafter Rollout Collector
+          </h1>
+          <p className="mt-2 text-gray-500 text-sm max-w-xl mx-auto leading-relaxed">
+            Research hub: compare world-model modes, run live inference from your API, or collect
+            human baselines. Pre-recorded side-by-side rollouts ship when assets are added under{" "}
+            <code className="text-gray-600">public/recordings/</code>.
+          </p>
+        </div>
+
+        {/* Compare — headline (placeholder until bundled recordings) */}
+        <section className="w-full space-y-3">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest text-center">
+            1 · Compare Base WM vs HWM
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              className="rounded-xl border border-dashed border-gray-700 min-h-[180px] flex flex-col items-center justify-center p-6 bg-gray-950/50 text-center"
+              aria-hidden
             >
-              Crafter
-            </h1>
-            <p className="mt-1 text-gray-500 text-base font-medium tracking-widest uppercase text-sm">
-              Rollout Collector
-            </p>
+              <span className="text-[10px] text-gray-600 uppercase tracking-wide mb-2">Base WM</span>
+              <p className="text-gray-500 text-sm">
+                Recorded rollout slot — flat CEM / LeWM (same seed + goal as HWM).
+              </p>
+            </div>
+            <div
+              className="rounded-xl border border-dashed border-violet-800/50 min-h-[180px] flex flex-col items-center justify-center p-6 bg-gray-950/50 text-center"
+              aria-hidden
+            >
+              <span className="text-[10px] text-gray-600 uppercase tracking-wide mb-2">
+                Hierarchical WM
+              </span>
+              <p className="text-gray-500 text-sm">
+                Recorded rollout slot — two-level CEM with macro subgoals.
+              </p>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <p className="text-gray-400 text-lg max-w-sm leading-relaxed">
-          Play the Crafter environment or watch world models plan in real-time.
+        <p className="text-gray-600 text-xs text-center max-w-md">
+          Default landing emphasizes the scientific comparison. Use live inference when your Railway
+          API is configured.
         </p>
 
-        {/* Cards */}
-        <div className="flex flex-col sm:flex-row gap-5 w-full max-w-md">
-          <button
-            onClick={() => navigate("/play")}
-            className="group flex-1 relative overflow-hidden rounded-2xl border border-indigo-700/50 bg-indigo-950/40 px-8 py-8 text-left transition-all duration-200 hover:border-indigo-500 hover:bg-indigo-950/60 hover:shadow-[0_0_30px_rgba(99,102,241,0.25)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-          >
-            <div className="text-3xl mb-3">🎮</div>
-            <div className="text-white font-bold text-xl mb-1 group-hover:text-indigo-200 transition-colors">
-              Play
-            </div>
-            <div className="text-gray-500 text-sm leading-snug">
-              Control the agent yourself, collect rollouts.
-            </div>
-            <div className="absolute bottom-4 right-4 text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity text-lg">
-              →
-            </div>
-          </button>
+        {/* Live · Human · Random */}
+        <section className="w-full space-y-3">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest text-center">
+            Run sessions
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button
+              type="button"
+              onClick={() => navigate("/wm-demo")}
+              className="rounded-xl border border-violet-700/50 bg-violet-950/30 px-5 py-5 text-left hover:border-violet-500 hover:bg-violet-950/50 transition-colors"
+            >
+              <div className="text-xl mb-2">⚡</div>
+              <div className="text-white font-semibold text-sm">Live inference</div>
+              <p className="text-gray-500 text-xs mt-1 leading-snug">
+                Base WM, HWM, or random policy via WebSocket.
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/play")}
+              className="rounded-xl border border-indigo-700/50 bg-indigo-950/30 px-5 py-5 text-left hover:border-indigo-500 hover:bg-indigo-950/50 transition-colors"
+            >
+              <div className="text-xl mb-2">🎮</div>
+              <div className="text-white font-semibold text-sm">Human play</div>
+              <p className="text-gray-500 text-xs mt-1 leading-snug">
+                Manual control and rollout collection.
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/wm-demo")}
+              className="rounded-xl border border-gray-700 bg-gray-900/50 px-5 py-5 text-left hover:border-gray-500 transition-colors"
+            >
+              <div className="text-xl mb-2">🎲</div>
+              <div className="text-white font-semibold text-sm">Random baseline</div>
+              <p className="text-gray-500 text-xs mt-1 leading-snug">
+                Open World Models → Random tab for uniform actions.
+              </p>
+            </button>
+          </div>
+        </section>
 
-          <button
-            onClick={() => navigate("/wm-demo")}
-            className="group flex-1 relative overflow-hidden rounded-2xl border border-violet-700/50 bg-violet-950/40 px-8 py-8 text-left transition-all duration-200 hover:border-violet-500 hover:bg-violet-950/60 hover:shadow-[0_0_30px_rgba(139,92,246,0.25)] focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-          >
-            <div className="text-3xl mb-3">🧠</div>
-            <div className="text-white font-bold text-xl mb-1 group-hover:text-violet-200 transition-colors">
-              World Models
-            </div>
-            <div className="text-gray-500 text-sm leading-snug">
-              Watch LeWM and HWM plan live via S3 inference.
-            </div>
-            <div className="absolute bottom-4 right-4 text-violet-500 opacity-0 group-hover:opacity-100 transition-opacity text-lg">
-              →
-            </div>
-          </button>
-        </div>
-
-        <p className="text-gray-700 text-xs">
-          Powered by FastAPI + Railway · Frontend on Vercel
-        </p>
+        <p className="text-gray-700 text-xs">FastAPI + Railway · Vercel</p>
       </div>
     </div>
   );
